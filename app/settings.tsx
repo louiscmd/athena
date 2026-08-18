@@ -217,6 +217,10 @@ export default function SettingsScreen() {
               autoCorrect={false}
             />
           </Field>
+          <Text style={styles.fieldHint}>
+            In Google Cloud Console → Credentials → your OAuth Client → Authorized JavaScript origins, add exactly:{'\n'}
+            {typeof window !== 'undefined' ? window.location.origin : 'https://athena-pied-one.vercel.app'}
+          </Text>
           <View style={styles.connectRow}>
             <View style={styles.connectStatus}>
               <View style={[styles.connectDot, gcalConnected && styles.connectDotOn]} />
