@@ -1,0 +1,234 @@
+import React, { useState } from 'react';
+import {
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  ScrollView, Switch, Alert,
+} from 'react-native';
+import { router } from 'expo-router';
+import { useAthena } from '@/contexts/AthenaContext';
+import Card from '@/components/ui/Card';
+import { Colors, Spacing, Radius } from '@/constants/theme';
+
+export default function SettingsScreen() {
+  const { settings, updateSettings } = useAthena();
+  const [form, setForm] = useState({ ...settings });
+
+  async function handleSave() {
+    await updateSettings(form);
+    Alert.alert('Saved', 'Settings updated.');
+    router.back();
+  }
+
+  function update<K extends keyof typeof form>(key: K, val: (typeof form)[K]) {
+    setForm(prev => ({ ...prev, [key]: val }));
+  }
+
+  return (
+    <View style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()}>
+          <Text style={styles.back}>← Back</Text>
+        </TouchableOpacity>
+        <Text style={styles.title}>Settings</Text>
+        <TouchableOpacity onPress={handleSave}>
+          <Text style={styles.save}>Save</Text>
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.scroll}>
+        {/* Profile */}
+        <Section title="Profile">
+          <Field label="Your name">
+            <TextInput
+              style={styles.input}
+              value={form.userName}
+              onChangeText={v => update('userName', v)}
+              placeholder="First name"
+              placeholderTextColor={Colors.textMuted}
+            />
+          </Field>
+          <Field label="Currency">
+            <TextInput
+              style={styles.input}
+              value={form.currency}
+              onChangeText={v => update('currency', v.toUpperCase())}
+              placeholder="USD"
+              placeholderTextColor={Colors.textMuted}
+              maxLength={3}
+              autoCapitalize="characters"
+            />
+          </Field>
+        </Section>
+
+        {/* API Keys */}
+        <Section title="API Keys">
+          <Field label="Anthropic API Key (required)">
+            <TextInput
+              style={styles.input}
+              value={form.anthropicApiKey}
+              onChangeText={v => update('anthropicApiKey', v)}
+              placeholder="sk-ant-..."
+              placeholderTextColor={Colors.textMuted}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </Field>
+          <Field label="OpenAI API Key (for voice input)">
+            <TextInput
+              style={styles.input}
+              value={form.openAiApiKey}
+              onChangeText={v => update('openAiApiKey', v)}
+              placeholder="sk-... (optional)"
+              placeholderTextColor={Colors.textMuted}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </Field>
+        </Section>
+
+        {/* Voice */}
+        <Section title="Voice">
+          <Field label={`Speech speed: ${form.voice.speed.toFixed(1)}x`}>
+            <View style={styles.sliderRow}>
+              {[0.7, 0.85, 1.0, 1.15, 1.3].map(v => (
+                <TouchableOpacity
+                  key={v}
+                  style={[styles.chip, form.voice.speed === v && styles.chipActive]}
+                  onPress={() => update('voice', { ...form.voice, speed: v })}
+                >
+                  <Text style={[styles.chipText, form.voice.speed === v && styles.chipTextActive]}>
+                    {v}x
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </Field>
+        </Section>
+
+        {/* Notifications */}
+        <Section title="Notifications">
+          <Row
+            label="Daily briefing"
+            value={form.notifications.dailyBriefing}
+            onChange={v => update('notifications', { ...form.notifications, dailyBriefing: v })}
+          />
+          <Row
+            label="Task reminders"
+            value={form.notifications.taskReminders}
+            onChange={v => update('notifications', { ...form.notifications, taskReminders: v })}
+          />
+          <Row
+            label="Habit reminders"
+            value={form.notifications.habitReminders}
+            onChange={v => update('notifications', { ...form.notifications, habitReminders: v })}
+          />
+        </Section>
+
+        {/* Info */}
+        <Card style={styles.info}>
+          <Text style={styles.infoText}>
+            ℹ️  Athena stores all data locally on your device. API keys are never sent anywhere except directly to Anthropic and OpenAI.
+          </Text>
+        </Card>
+
+        <View style={{ height: 40 }} />
+      </ScrollView>
+    </View>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <Card>{children}</Card>
+    </View>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      {children}
+    </View>
+  );
+}
+
+function Row({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <View style={styles.row}>
+      <Text style={styles.rowLabel}>{label}</Text>
+      <Switch
+        value={value}
+        onValueChange={onChange}
+        trackColor={{ false: Colors.bgElevated, true: Colors.primary }}
+        thumbColor={Colors.bg}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.bg },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.lg,
+    paddingTop: 60,
+    paddingBottom: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  back: { color: Colors.primary, fontSize: 15 },
+  title: { color: Colors.text, fontSize: 17, fontWeight: '600' },
+  save: { color: Colors.primary, fontSize: 15, fontWeight: '600' },
+  scroll: { padding: Spacing.lg, gap: Spacing.xl },
+  section: { gap: Spacing.sm },
+  sectionTitle: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    paddingHorizontal: Spacing.xs,
+  },
+  field: { gap: Spacing.xs, paddingVertical: Spacing.sm },
+  fieldLabel: { color: Colors.textSecondary, fontSize: 12 },
+  input: {
+    backgroundColor: Colors.bgElevated,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    color: Colors.text,
+    fontSize: 14,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 10,
+  },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+  },
+  rowLabel: { color: Colors.text, fontSize: 15 },
+  sliderRow: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
+  chip: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 7,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.bgElevated,
+  },
+  chipActive: { borderColor: Colors.primary, backgroundColor: Colors.primaryDim },
+  chipText: { color: Colors.textSecondary, fontSize: 13 },
+  chipTextActive: { color: Colors.primary },
+  info: {
+    marginTop: Spacing.md,
+    borderColor: Colors.borderGlow,
+  },
+  infoText: { color: Colors.textMuted, fontSize: 12, lineHeight: 18 },
+});

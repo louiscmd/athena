@@ -1,0 +1,62 @@
+{
+  "expo": {
+    "name": "Athena",
+    "slug": "athena",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "athena",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#050510"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.louiscmd.athena",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Athena needs microphone access to hear your voice commands.",
+        "NSSpeechRecognitionUsageDescription": "Athena uses speech recognition to understand what you say."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#050510"
+      },
+      "package": "com.louiscmd.athena",
+      "permissions": [
+        "RECORD_AUDIO",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#00d4ff"
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Athena needs microphone access to hear your voice commands."
+        }
+      ],
+      "expo-sqlite"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
