@@ -1,7 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl  = process.env.EXPO_PUBLIC_SUPABASE_URL  ?? '';
-const supabaseKey  = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+// Strip any trailing path (e.g. /rest/v1/) — Supabase client needs just the base origin
+function normalizeUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//${u.host}`;
+  } catch {
+    return url;
+  }
+}
+
+const rawUrl      = process.env.EXPO_PUBLIC_SUPABASE_URL  ?? '';
+const supabaseUrl = normalizeUrl(rawUrl);
+const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseKey);
 
