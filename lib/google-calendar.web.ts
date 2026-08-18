@@ -2,7 +2,11 @@
 // Uses Google Identity Services (Token model / implicit flow) — no backend needed.
 // Metro auto-resolves .web.ts over .ts on the web platform.
 
-const SCOPES = 'https://www.googleapis.com/auth/calendar';
+// All Google scopes requested at once — Calendar + Gmail
+const SCOPES = [
+  'https://www.googleapis.com/auth/calendar',
+  'https://www.googleapis.com/auth/gmail.modify',
+].join(' ');
 const TOKEN_KEY = 'gcal_access_token';
 const TOKEN_EXPIRY_KEY = 'gcal_token_expiry';
 const BASE = 'https://www.googleapis.com/calendar/v3';
