@@ -53,7 +53,8 @@
           "microphonePermission": "Athena needs microphone access to hear your voice commands."
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true
