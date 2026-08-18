@@ -71,6 +71,80 @@ User: "What's on my plate today?"
 → { "reply": "You have 3 tasks due today..." }`;
 }
 
+// ─── Daily Brief ──────────────────────────────────────────────────────────────
+
+export interface DailyBriefData {
+  userName: string;
+  todaysEvents: Array<{ title: string; startTime: number; endTime: number; location?: string }>;
+  todaysTasks: Array<{ title: string; priority: string; completed: boolean }>;
+  habits: Array<{ name: string; streak: number; completedToday: boolean }>;
+  activeGoals: Array<{ title: string; progress: number; timeframe: string }>;
+  financeThisWeek: { income: number; expenses: number; currency: string };
+  recentNoteCount: number;
+}
+
+export async function generateDailyBrief(data: DailyBriefData, apiKey: string): Promise<string> {
+  const client = new Anthropic({ apiKey });
+
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-US', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  });
+  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+  const contextLines: string[] = [
+    `TODAY'S EVENTS (${data.todaysEvents.length}):`,
+    ...data.todaysEvents.map(e => {
+      const t = new Date(e.startTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      return `  - ${e.title} at ${t}${e.location ? ` (${e.location})` : ''}`;
+    }),
+    data.todaysEvents.length === 0 ? '  No events scheduled.' : '',
+    '',
+    `TASKS DUE TODAY (${data.todaysTasks.filter(t => !t.completed).length} pending):`,
+    ...data.todaysTasks.map(t => `  - [${t.completed ? 'done' : t.priority}] ${t.title}`),
+    data.todaysTasks.length === 0 ? '  No tasks due today.' : '',
+    '',
+    `HABITS:`,
+    ...data.habits.map(h => `  - ${h.name}: ${h.streak} day streak${h.completedToday ? ' (done today)' : ' (not done yet)'}`),
+    data.habits.length === 0 ? '  No habits tracked yet.' : '',
+    '',
+    `ACTIVE GOALS (${data.activeGoals.length}):`,
+    ...data.activeGoals.map(g => `  - ${g.title} — ${g.progress}% complete (${g.timeframe})`),
+    '',
+    `FINANCE THIS WEEK: +${data.financeThisWeek.income} income / -${data.financeThisWeek.expenses} expenses (${data.financeThisWeek.currency})`,
+    '',
+    `NOTES: ${data.recentNoteCount} notes in your library`,
+  ].filter(l => l !== undefined);
+
+  const prompt = `You are Athena, a personal AI assistant. Generate a natural, engaging morning briefing for ${data.userName || 'the user'}.
+
+Current date and time: ${dateStr} at ${timeStr}
+
+DATA:
+${contextLines.join('\n')}
+
+RULES:
+- Speak in first person as Athena ("I see you have...", "Your habit streak is...")
+- Be warm, concise, and energizing — like a smart assistant starting your day
+- Mention the most important items first (high priority tasks, time-sensitive events)
+- Comment on habit streaks if any are impressive (7+ days)
+- Keep it between 120-180 words — natural spoken pace
+- Do NOT use bullet points or markdown — write as flowing natural speech
+- End with one short motivating sentence`;
+
+  try {
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 400,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    return response.content[0].type === 'text' ? response.content[0].text : '';
+  } catch (err) {
+    console.error('Daily brief generation error:', err);
+    return `Good ${now.getHours() < 12 ? 'morning' : 'afternoon'}, ${data.userName || 'there'}. Here is your daily brief. You have ${data.todaysTasks.filter(t => !t.completed).length} tasks and ${data.todaysEvents.length} events today.`;
+  }
+}
+
 export async function askAthena(userMessage: string): Promise<AthenaResponse> {
   const settings = await getSettings();
 

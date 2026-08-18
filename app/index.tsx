@@ -155,6 +155,7 @@ export default function HomeScreen() {
 
         {/* Nav bar */}
         <View style={styles.navBar}>
+          <NavItem label="Brief" onPress={() => router.push('/(tabs)/daily-brief')} highlight />
           <NavItem label="Schedule" onPress={() => router.push('/(tabs)/schedule')} />
           <NavItem label="Tasks" onPress={() => router.push('/(tabs)/tasks')} />
           <NavItem label="Habits" onPress={() => router.push('/(tabs)/habits')} />
@@ -167,10 +168,10 @@ export default function HomeScreen() {
   );
 }
 
-function NavItem({ label, onPress }: { label: string; onPress: () => void }) {
+function NavItem({ label, onPress, highlight }: { label: string; onPress: () => void; highlight?: boolean }) {
   return (
     <TouchableOpacity style={styles.navItem} onPress={onPress}>
-      <Text style={styles.navLabel}>{label}</Text>
+      <Text style={[styles.navLabel, highlight && styles.navLabelHighlight]}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -301,5 +302,9 @@ const styles = StyleSheet.create({
     fontSize: 9,
     letterSpacing: 1,
     textTransform: 'uppercase',
+  },
+  navLabelHighlight: {
+    color: Colors.primary,
+    fontWeight: '700',
   },
 });
