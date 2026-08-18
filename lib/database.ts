@@ -343,6 +343,7 @@ const DEFAULT_SETTINGS: AthenaSettings = {
   openAiApiKey: '',
   googleClientId: '',
   spotifyClientId: '',
+  youtubeApiKey: '',
   voice: { speed: 1.0, pitch: 1.0, language: 'en-US' },
   currency: 'USD',
   notifications: {

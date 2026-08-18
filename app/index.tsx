@@ -13,6 +13,8 @@ import VoiceButton from '@/components/voice/VoiceButton';
 import { useAthena } from '@/contexts/AthenaContext';
 import { useVoiceInteraction } from '@/hooks/useVoice';
 import { Colors, Spacing, Radius } from '@/constants/theme';
+import { isSupabaseConfigured } from '@/lib/supabase';
+import { getUser } from '@/lib/auth';
 import type { Message } from '@/types';
 
 const { width, height } = Dimensions.get('window');
@@ -24,9 +26,15 @@ export default function HomeScreen() {
   const [showText, setShowText] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
-  // Redirect to onboarding if first launch
+  // Auth guard: redirect to login if Supabase is configured and user is not logged in
   useEffect(() => {
-    if (initialized && !settings.anthropicApiKey) {
+    if (!initialized) return;
+    if (isSupabaseConfigured) {
+      getUser().then(user => {
+        if (!user) router.replace('/login');
+        else if (!settings.anthropicApiKey) router.replace('/onboarding');
+      });
+    } else if (!settings.anthropicApiKey) {
       router.replace('/onboarding');
     }
   }, [initialized, settings.anthropicApiKey]);
@@ -163,7 +171,7 @@ export default function HomeScreen() {
           <NavItem label="Goals" onPress={() => router.push('/(tabs)/goals')} />
           <NavItem label="Notes" onPress={() => router.push('/(tabs)/notes')} />
           <NavItem label="Gmail" onPress={() => router.push('/(tabs)/gmail')} />
-          <NavItem label="Spotify" onPress={() => router.push('/(tabs)/spotify')} />
+          <NavItem label="Music" onPress={() => router.push('/(tabs)/youtube')} />
           <NavItem label="Settings" onPress={() => router.push('/settings')} />
         </View>
       </KeyboardAvoidingView>

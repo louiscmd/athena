@@ -1,10 +1,11 @@
-// Web implementation of the database using localStorage
+// Web implementation of the database using localStorage + Supabase cloud sync
 // Mirrors the exact same API as database.ts (SQLite) so all imports work on both platforms
 
 import type {
   Task, CalendarEvent, Habit, FinanceEntry, Goal, Note,
   AthenaSettings, Message,
 } from '@/types';
+import { scheduleSyncToCloud } from './sync';
 
 // ─── Generic localStorage store ───────────────────────────────────────────────
 
@@ -55,6 +56,7 @@ export async function createTask(data: Omit<Task, 'id' | 'createdAt'>): Promise<
   const task: Task = { id: uid(), createdAt: Date.now(), ...data };
   tasks.push(task);
   setStore('tasks', tasks);
+  scheduleSyncToCloud();
   return task;
 }
 
@@ -66,10 +68,12 @@ export async function getTasks(includeCompleted = false): Promise<Task[]> {
 export async function updateTask(id: string, data: Partial<Task>): Promise<void> {
   const tasks = getStore<Task>('tasks');
   setStore('tasks', tasks.map(t => t.id === id ? { ...t, ...data } : t));
+  scheduleSyncToCloud();
 }
 
 export async function deleteTask(id: string): Promise<void> {
   setStore('tasks', getStore<Task>('tasks').filter(t => t.id !== id));
+  scheduleSyncToCloud();
 }
 
 // ─── Events ───────────────────────────────────────────────────────────────────
@@ -79,6 +83,7 @@ export async function createEvent(data: Omit<CalendarEvent, 'id' | 'createdAt'>)
   const event: CalendarEvent = { id: uid(), createdAt: Date.now(), ...data };
   events.push(event);
   setStore('events', events);
+  scheduleSyncToCloud();
   return event;
 }
 
@@ -90,6 +95,7 @@ export async function getEvents(from: number, to: number): Promise<CalendarEvent
 
 export async function deleteEvent(id: string): Promise<void> {
   setStore('events', getStore<CalendarEvent>('events').filter(e => e.id !== id));
+  scheduleSyncToCloud();
 }
 
 // ─── Habits ───────────────────────────────────────────────────────────────────
@@ -99,6 +105,7 @@ export async function createHabit(data: Omit<Habit, 'id' | 'createdAt' | 'streak
   const habit: Habit = { id: uid(), createdAt: Date.now(), streak: 0, bestStreak: 0, completedDates: [], ...data };
   habits.push(habit);
   setStore('habits', habits);
+  scheduleSyncToCloud();
   return habit;
 }
 
@@ -108,10 +115,12 @@ export async function getHabits(): Promise<Habit[]> {
 
 export async function updateHabit(id: string, data: Partial<Habit>): Promise<void> {
   setStore('habits', getStore<Habit>('habits').map(h => h.id === id ? { ...h, ...data } : h));
+  scheduleSyncToCloud();
 }
 
 export async function deleteHabit(id: string): Promise<void> {
   setStore('habits', getStore<Habit>('habits').filter(h => h.id !== id));
+  scheduleSyncToCloud();
 }
 
 // ─── Finance ─────────────────────────────────────────────────────────────────
@@ -121,6 +130,7 @@ export async function createFinanceEntry(data: Omit<FinanceEntry, 'id' | 'create
   const entry: FinanceEntry = { id: uid(), createdAt: Date.now(), ...data };
   entries.push(entry);
   setStore('finance', entries);
+  scheduleSyncToCloud();
   return entry;
 }
 
@@ -132,6 +142,7 @@ export async function getFinanceEntries(limit = 50): Promise<FinanceEntry[]> {
 
 export async function deleteFinanceEntry(id: string): Promise<void> {
   setStore('finance', getStore<FinanceEntry>('finance').filter(e => e.id !== id));
+  scheduleSyncToCloud();
 }
 
 // ─── Goals ────────────────────────────────────────────────────────────────────
@@ -141,6 +152,7 @@ export async function createGoal(data: Omit<Goal, 'id' | 'createdAt' | 'progress
   const goal: Goal = { id: uid(), createdAt: Date.now(), progress: 0, milestones: [], status: 'active', ...data };
   goals.push(goal);
   setStore('goals', goals);
+  scheduleSyncToCloud();
   return goal;
 }
 
@@ -150,6 +162,7 @@ export async function getGoals(): Promise<Goal[]> {
 
 export async function updateGoal(id: string, data: Partial<Goal>): Promise<void> {
   setStore('goals', getStore<Goal>('goals').map(g => g.id === id ? { ...g, ...data } : g));
+  scheduleSyncToCloud();
 }
 
 // ─── Notes ────────────────────────────────────────────────────────────────────
@@ -160,6 +173,7 @@ export async function createNote(data: Omit<Note, 'id' | 'createdAt' | 'updatedA
   const note: Note = { id: uid(), createdAt: now, updatedAt: now, ...data };
   notes.push(note);
   setStore('notes', notes);
+  scheduleSyncToCloud();
   return note;
 }
 
@@ -170,10 +184,12 @@ export async function getNotes(): Promise<Note[]> {
 
 export async function updateNote(id: string, data: Partial<Note>): Promise<void> {
   setStore('notes', getStore<Note>('notes').map(n => n.id === id ? { ...n, ...data, updatedAt: Date.now() } : n));
+  scheduleSyncToCloud();
 }
 
 export async function deleteNote(id: string): Promise<void> {
   setStore('notes', getStore<Note>('notes').filter(n => n.id !== id));
+  scheduleSyncToCloud();
 }
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
@@ -184,6 +200,7 @@ const DEFAULT_SETTINGS: AthenaSettings = {
   openAiApiKey: '',
   googleClientId: '',
   spotifyClientId: '',
+  youtubeApiKey: '',
   voice: { speed: 1.0, pitch: 1.0, language: 'en-US' },
   currency: 'USD',
   notifications: { dailyBriefing: true, briefingTime: '08:00', taskReminders: true, habitReminders: true },
@@ -199,6 +216,7 @@ export async function getSettings(): Promise<AthenaSettings> {
 
 export async function saveSettings(settings: AthenaSettings): Promise<void> {
   localStorage.setItem('settings', JSON.stringify(settings));
+  scheduleSyncToCloud();
 }
 
 // ─── Context for AI ───────────────────────────────────────────────────────────
