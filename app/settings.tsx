@@ -10,15 +10,18 @@ import { Colors, Spacing, Radius } from '@/constants/theme';
 import {
   connectGoogleCalendar, disconnectGoogleCalendar, isGoogleCalendarConnected,
 } from '@/lib/google-calendar';
+import { connectSpotify, disconnectSpotify, isSpotifyConnected } from '@/lib/spotify';
 
 export default function SettingsScreen() {
   const { settings, updateSettings } = useAthena();
   const [form, setForm] = useState({ ...settings });
   const [gcalConnected, setGcalConnected] = useState(false);
   const [gcalLoading, setGcalLoading] = useState(false);
+  const [spotifyConnected, setSpotifyConnected] = useState(false);
 
   useEffect(() => {
     setGcalConnected(isGoogleCalendarConnected());
+    setSpotifyConnected(isSpotifyConnected());
   }, []);
 
   async function handleGcalConnect() {
@@ -37,15 +40,8 @@ export default function SettingsScreen() {
   }
 
   function handleGcalDisconnect() {
-    Alert.alert('Disconnect Google Calendar', 'Stop syncing Google Calendar events?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Disconnect', style: 'destructive', onPress: () => {
-          disconnectGoogleCalendar();
-          setGcalConnected(false);
-        },
-      },
-    ]);
+    disconnectGoogleCalendar();
+    setGcalConnected(false);
   }
 
   async function handleSave() {
@@ -164,6 +160,43 @@ export default function SettingsScreen() {
 
         {/* Connections */}
         <Section title="Connections">
+          <Field label="Spotify Client ID">
+            <TextInput
+              style={styles.input}
+              value={form.spotifyClientId}
+              onChangeText={v => update('spotifyClientId', v)}
+              placeholder="your-spotify-client-id"
+              placeholderTextColor={Colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </Field>
+          <View style={styles.connectRow}>
+            <View style={styles.connectStatus}>
+              <View style={[styles.connectDot, spotifyConnected && styles.connectDotOn]} />
+              <Text style={styles.connectLabel}>
+                Spotify — {spotifyConnected ? 'Connected' : 'Not connected'}
+              </Text>
+            </View>
+            {spotifyConnected ? (
+              <TouchableOpacity style={styles.disconnectBtn} onPress={() => { disconnectSpotify(); setSpotifyConnected(false); }}>
+                <Text style={styles.disconnectBtnText}>Disconnect</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.connectBtn}
+                onPress={async () => {
+                  const id = form.spotifyClientId.trim();
+                  if (!id) { Alert.alert('Missing', 'Enter your Spotify Client ID first.'); return; }
+                  await updateSettings({ ...settings, ...form });
+                  await connectSpotify(id); // redirects away
+                }}
+              >
+                <Text style={styles.connectBtnText}>Connect</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
           <Field label="Google OAuth Client ID">
             <TextInput
               style={styles.input}

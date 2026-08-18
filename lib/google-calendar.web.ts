@@ -73,10 +73,8 @@ export function isGoogleCalendarConnected(): boolean {
 }
 
 export function disconnectGoogleCalendar(): void {
-  const token = localStorage.getItem(TOKEN_KEY);
-  if (token && (window as any).google?.accounts?.oauth2) {
-    (window as any).google.accounts.oauth2.revoke(token, () => {});
-  }
+  // Clear stored token — Athena is disconnected immediately.
+  // The token naturally expires on Google's side; no revoke call needed.
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(TOKEN_EXPIRY_KEY);
 }

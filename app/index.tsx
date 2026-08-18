@@ -163,6 +163,7 @@ export default function HomeScreen() {
           <NavItem label="Goals" onPress={() => router.push('/(tabs)/goals')} />
           <NavItem label="Notes" onPress={() => router.push('/(tabs)/notes')} />
           <NavItem label="Gmail" onPress={() => router.push('/(tabs)/gmail')} />
+          <NavItem label="Spotify" onPress={() => router.push('/(tabs)/spotify')} />
           <NavItem label="Settings" onPress={() => router.push('/settings')} />
         </View>
       </KeyboardAvoidingView>

@@ -145,6 +145,7 @@ export interface AthenaSettings {
   anthropicApiKey: string;
   openAiApiKey: string;     // Optional, for Whisper STT
   googleClientId: string;   // Google OAuth client ID
+  spotifyClientId: string;  // Spotify app client ID
   voice: {
     speed: number;          // 0.5–2.0
     pitch: number;          // 0.5–2.0

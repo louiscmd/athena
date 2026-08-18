@@ -1,11 +1,22 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Platform } from 'react-native';
+import { useEffect } from 'react';
 import { AthenaProvider } from '@/contexts/AthenaContext';
 import { Colors } from '@/constants/theme';
+import { handleSpotifyCallback } from '@/lib/spotify';
 
 export default function RootLayout() {
+  // Handle Spotify PKCE redirect callback on app load
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      handleSpotifyCallback().then(ok => {
+        if (ok) console.log('Spotify connected via OAuth callback');
+      });
+    }
+  }, []);
+
   return (
     <GestureHandlerRootView style={styles.root}>
       <AthenaProvider>
