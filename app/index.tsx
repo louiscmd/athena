@@ -74,7 +74,7 @@ export default function HomeScreen() {
           style={styles.settingsBtn}
           onPress={() => router.push('/settings')}
         >
-          <Text style={styles.settingsIcon}>⚙️</Text>
+          <Text style={styles.settingsIcon}>···</Text>
         </TouchableOpacity>
       </View>
 
@@ -92,9 +92,9 @@ export default function HomeScreen() {
           style={[styles.modeLabel, mode !== 'idle' && styles.modeLabelActive]}
         >
           {mode === 'idle' ? '' :
-            mode === 'listening' ? '● Listening...' :
-            mode === 'thinking' ? '◌ Processing...' :
-            '▶ Speaking'}
+            mode === 'listening' ? 'Listening...' :
+            mode === 'thinking' ? 'Processing...' :
+            'Speaking'}
         </Animated.Text>
       </View>
 
@@ -155,22 +155,21 @@ export default function HomeScreen() {
 
         {/* Nav bar */}
         <View style={styles.navBar}>
-          <NavItem icon="📅" label="Schedule" onPress={() => router.push('/(tabs)/schedule')} />
-          <NavItem icon="✅" label="Tasks" onPress={() => router.push('/(tabs)/tasks')} />
-          <NavItem icon="💪" label="Habits" onPress={() => router.push('/(tabs)/habits')} />
-          <NavItem icon="💰" label="Finance" onPress={() => router.push('/(tabs)/finance')} />
-          <NavItem icon="🎯" label="Goals" onPress={() => router.push('/(tabs)/goals')} />
-          <NavItem icon="📝" label="Notes" onPress={() => router.push('/(tabs)/notes')} />
+          <NavItem label="Schedule" onPress={() => router.push('/(tabs)/schedule')} />
+          <NavItem label="Tasks" onPress={() => router.push('/(tabs)/tasks')} />
+          <NavItem label="Habits" onPress={() => router.push('/(tabs)/habits')} />
+          <NavItem label="Finance" onPress={() => router.push('/(tabs)/finance')} />
+          <NavItem label="Goals" onPress={() => router.push('/(tabs)/goals')} />
+          <NavItem label="Notes" onPress={() => router.push('/(tabs)/notes')} />
         </View>
       </KeyboardAvoidingView>
     </View>
   );
 }
 
-function NavItem({ icon, label, onPress }: { icon: string; label: string; onPress: () => void }) {
+function NavItem({ label, onPress }: { label: string; onPress: () => void }) {
   return (
     <TouchableOpacity style={styles.navItem} onPress={onPress}>
-      <Text style={styles.navIcon}>{icon}</Text>
       <Text style={styles.navLabel}>{label}</Text>
     </TouchableOpacity>
   );
@@ -295,14 +294,12 @@ const styles = StyleSheet.create({
   },
   navItem: {
     alignItems: 'center',
-    gap: 3,
-  },
-  navIcon: {
-    fontSize: 20,
+    paddingVertical: 4,
   },
   navLabel: {
     color: Colors.textMuted,
     fontSize: 9,
-    letterSpacing: 0.5,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
 });

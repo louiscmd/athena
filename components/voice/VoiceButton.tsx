@@ -36,10 +36,10 @@ export default function VoiceButton({ mode, onPressIn, onPressOut, onPress }: Pr
   const isSpeaking = mode === 'speaking';
 
   function getIcon() {
-    if (isListening) return '⏹';
-    if (isThinking) return '⋯';
-    if (isSpeaking) return '🔇';
-    return '🎙';
+    if (isListening) return '■';
+    if (isThinking) return '···';
+    if (isSpeaking) return '■';
+    return '○';
   }
 
   function getLabel() {

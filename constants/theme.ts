@@ -1,38 +1,38 @@
 export const Colors = {
   // Backgrounds
-  bg: '#050510',
-  bgSurface: '#0a0a1e',
-  bgCard: '#0d0d24',
-  bgElevated: '#12122a',
+  bg: '#060000',
+  bgSurface: '#0d0000',
+  bgCard: '#110000',
+  bgElevated: '#190000',
 
-  // Brand
-  primary: '#00d4ff',      // Cyan — Athena's signature
-  primaryDim: '#00d4ff22',
-  primaryGlow: '#00d4ff44',
-  secondary: '#6600ff',    // Purple
-  secondaryDim: '#6600ff22',
-  accent: '#0066ff',       // Blue
+  // Brand — red
+  primary: '#cc1500',
+  primaryDim: '#cc150022',
+  primaryGlow: '#cc150044',
+  secondary: '#ff3300',
+  secondaryDim: '#ff330022',
+  accent: '#ff5500',
 
-  // Text
-  text: '#e0e8ff',
-  textSecondary: '#8899bb',
-  textMuted: '#445566',
+  // Text — warm near-white
+  text: '#fff0ee',
+  textSecondary: '#a07060',
+  textMuted: '#553030',
 
   // Status
-  success: '#00ff88',
-  warning: '#ffaa00',
-  error: '#ff4466',
+  success: '#55cc44',
+  warning: '#dd8800',
+  error: '#ff1100',
 
   // Sphere
-  sphereCore: '#00a8ff',
-  sphereGlow: '#0044ff',
-  sphereOuter: '#003388',
-  sphereRing: '#00d4ff88',
-  sphereParticle: '#00d4ff',
+  sphereCore: '#dd1100',
+  sphereGlow: '#880000',
+  sphereOuter: '#330000',
+  sphereRing: '#cc150066',
+  sphereParticle: '#ff2200',
 
   // Border
-  border: '#1a1a3a',
-  borderGlow: '#00d4ff33',
+  border: '#200000',
+  borderGlow: '#cc150033',
 };
 
 export const Fonts = {

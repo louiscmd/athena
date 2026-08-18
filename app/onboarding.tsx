@@ -46,11 +46,11 @@ export default function OnboardingScreen() {
               Your personal AI assistant — always listening, always ready. Think JARVIS, but yours.
             </Text>
             <Text style={styles.features}>
-              ⚡ Voice-first interaction{'\n'}
-              📅 Smart scheduling{'\n'}
-              🎯 Goal & habit tracking{'\n'}
-              💰 Finance at a glance{'\n'}
-              🧠 Remembers everything you tell her
+              — Voice-first interaction{'\n'}
+              — Smart scheduling{'\n'}
+              — Goal and habit tracking{'\n'}
+              — Finance at a glance{'\n'}
+              — Remembers everything you tell her
             </Text>
             <TouchableOpacity style={styles.btn} onPress={() => setStep('name')}>
               <Text style={styles.btnText}>Get started →</Text>
