@@ -16,3 +16,5 @@ yarn-error.*
 .env
 .env.local
 expo-env.d.ts
+.vercel
+.env*

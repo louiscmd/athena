@@ -139,7 +139,7 @@ export default function OnboardingScreen() {
               <AthenaSphere mode="speaking" size={180} />
             </View>
             <Text style={styles.title}>
-              {name ? `Welcome, ${name}.` : 'You're all set.'}
+              {name ? `Welcome, ${name}.` : "You're all set."}
             </Text>
             <Text style={styles.subtitle}>
               Athena is ready. Hold the microphone button to speak, or tap the sphere to type.
