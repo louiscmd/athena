@@ -6,6 +6,8 @@ import {
 import { router } from 'expo-router';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { getTasks, getEvents, updateTask, deleteTask } from '@/lib/database';
+import { getGoogleCalendarEvents, isGoogleCalendarConnected } from '@/lib/google-calendar';
+import type { GoogleCalendarEvent } from '@/lib/google-calendar';
 import Card from '@/components/ui/Card';
 import { Colors, Spacing, Radius } from '@/constants/theme';
 import type { Task, CalendarEvent } from '@/types';
@@ -15,6 +17,8 @@ const DAY_MS = 86400000;
 export default function ScheduleScreen() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [googleEvents, setGoogleEvents] = useState<GoogleCalendarEvent[]>([]);
+  const [gcalConnected, setGcalConnected] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [loading, setLoading] = useState(true);
 
@@ -24,20 +28,23 @@ export default function ScheduleScreen() {
     const end = new Date(selectedDate);
     end.setHours(23, 59, 59, 999);
 
-    const [allTasks, dayEvents] = await Promise.all([
+    const connected = isGoogleCalendarConnected();
+    setGcalConnected(connected);
+
+    const [allTasks, dayEvents, gEvents] = await Promise.all([
       getTasks(),
       getEvents(start.getTime(), end.getTime()),
+      connected ? getGoogleCalendarEvents(start.getTime(), end.getTime()) : Promise.resolve([]),
     ]);
 
-    // Filter tasks for selected date
     const dayTasks = allTasks.filter(t => {
       if (!t.dueDate) return false;
-      const d = new Date(t.dueDate);
-      return d.toDateString() === selectedDate.toDateString();
+      return new Date(t.dueDate).toDateString() === selectedDate.toDateString();
     });
 
     setTasks(dayTasks);
     setEvents(dayEvents);
+    setGoogleEvents(gEvents);
     setLoading(false);
   }, [selectedDate]);
 
@@ -102,7 +109,31 @@ export default function ScheduleScreen() {
       </Text>
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        {/* Events */}
+        {/* Google Calendar events */}
+        {googleEvents.length > 0 && (
+          <Section title="Google Calendar">
+            {googleEvents.map(ev => (
+              <Animated.View key={ev.id} entering={FadeIn}>
+                <Card style={styles.eventCard}>
+                  <View style={[styles.eventDot, { backgroundColor: ev.color }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.eventTitle}>{ev.title}</Text>
+                    <Text style={styles.eventTime}>
+                      {new Date(ev.startTime).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' })}
+                      {' – '}
+                      {new Date(ev.endTime).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' })}
+                    </Text>
+                    {ev.location && <Text style={styles.eventLoc}>{ev.location}</Text>}
+                    {ev.description && <Text style={styles.eventDesc} numberOfLines={1}>{ev.description}</Text>}
+                  </View>
+                  <View style={styles.gcalBadge}><Text style={styles.gcalBadgeText}>GCal</Text></View>
+                </Card>
+              </Animated.View>
+            ))}
+          </Section>
+        )}
+
+        {/* Local events */}
         {events.length > 0 && (
           <Section title="Events">
             {events.map(ev => (
@@ -116,7 +147,7 @@ export default function ScheduleScreen() {
                       {' – '}
                       {new Date(ev.endTime).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' })}
                     </Text>
-                    {ev.location && <Text style={styles.eventLoc}>📍 {ev.location}</Text>}
+                    {ev.location && <Text style={styles.eventLoc}>{ev.location}</Text>}
                   </View>
                 </Card>
               </Animated.View>
@@ -138,7 +169,7 @@ export default function ScheduleScreen() {
                     <Text style={[styles.taskTitle, task.completed && styles.taskTitleDone]}>
                       {task.title}
                     </Text>
-                    {task.dueTime && <Text style={styles.taskTime}>⏰ {task.dueTime}</Text>}
+                    {task.dueTime && <Text style={styles.taskTime}>{task.dueTime}</Text>}
                   </View>
                   <TouchableOpacity onPress={() => removeTask(task.id)}>
                     <Text style={styles.deleteBtn}>✕</Text>
@@ -149,9 +180,15 @@ export default function ScheduleScreen() {
           </Section>
         )}
 
-        {events.length === 0 && tasks.length === 0 && !loading && (
+        {/* Google Calendar connect banner */}
+        {!gcalConnected && (
+          <TouchableOpacity style={styles.gcalBanner} onPress={() => router.push('/settings')}>
+            <Text style={styles.gcalBannerText}>Connect Google Calendar in Settings to see your events here</Text>
+          </TouchableOpacity>
+        )}
+
+        {events.length === 0 && tasks.length === 0 && googleEvents.length === 0 && !loading && (
           <View style={styles.empty}>
-            <Text style={styles.emptyIcon}>📅</Text>
             <Text style={styles.emptyText}>Nothing scheduled for this day</Text>
             <Text style={styles.emptyHint}>Tell Athena: "Schedule a meeting for this day at 3 PM"</Text>
           </View>
@@ -211,8 +248,24 @@ const styles = StyleSheet.create({
   taskTitleDone: { textDecorationLine: 'line-through', color: Colors.textMuted },
   taskTime: { color: Colors.textMuted, fontSize: 12, marginTop: 2 },
   deleteBtn: { color: Colors.textMuted, fontSize: 16, padding: 4 },
+  eventDesc: { color: Colors.textMuted, fontSize: 12, marginTop: 2 },
+  gcalBadge: {
+    backgroundColor: Colors.primaryDim,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    alignSelf: 'flex-start',
+  },
+  gcalBadgeText: { color: Colors.primary, fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
+  gcalBanner: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginTop: Spacing.md,
+  },
+  gcalBannerText: { color: Colors.textMuted, fontSize: 13, textAlign: 'center' },
   empty: { alignItems: 'center', gap: Spacing.sm, marginTop: 60 },
-  emptyIcon: { fontSize: 48 },
   emptyText: { color: Colors.textSecondary, fontSize: 16 },
   emptyHint: { color: Colors.textMuted, fontSize: 13, textAlign: 'center' },
 });

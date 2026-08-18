@@ -182,6 +182,7 @@ const DEFAULT_SETTINGS: AthenaSettings = {
   userName: '',
   anthropicApiKey: '',
   openAiApiKey: '',
+  googleClientId: '',
   voice: { speed: 1.0, pitch: 1.0, language: 'en-US' },
   currency: 'USD',
   notifications: { dailyBriefing: true, briefingTime: '08:00', taskReminders: true, habitReminders: true },

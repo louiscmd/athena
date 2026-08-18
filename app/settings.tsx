@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, Switch, Alert,
@@ -7,10 +7,46 @@ import { router } from 'expo-router';
 import { useAthena } from '@/contexts/AthenaContext';
 import Card from '@/components/ui/Card';
 import { Colors, Spacing, Radius } from '@/constants/theme';
+import {
+  connectGoogleCalendar, disconnectGoogleCalendar, isGoogleCalendarConnected,
+} from '@/lib/google-calendar';
 
 export default function SettingsScreen() {
   const { settings, updateSettings } = useAthena();
   const [form, setForm] = useState({ ...settings });
+  const [gcalConnected, setGcalConnected] = useState(false);
+  const [gcalLoading, setGcalLoading] = useState(false);
+
+  useEffect(() => {
+    setGcalConnected(isGoogleCalendarConnected());
+  }, []);
+
+  async function handleGcalConnect() {
+    const clientId = form.googleClientId.trim();
+    if (!clientId) {
+      Alert.alert('Missing Client ID', 'Enter your Google OAuth Client ID first.');
+      return;
+    }
+    setGcalLoading(true);
+    // Save client ID before opening popup
+    await updateSettings({ ...settings, ...form });
+    const ok = await connectGoogleCalendar(clientId);
+    setGcalConnected(ok);
+    setGcalLoading(false);
+    if (!ok) Alert.alert('Connection failed', 'Make sure the Client ID is correct and this origin is authorized in Google Cloud Console.');
+  }
+
+  function handleGcalDisconnect() {
+    Alert.alert('Disconnect Google Calendar', 'Stop syncing Google Calendar events?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Disconnect', style: 'destructive', onPress: () => {
+          disconnectGoogleCalendar();
+          setGcalConnected(false);
+        },
+      },
+    ]);
+  }
 
   async function handleSave() {
     await updateSettings(form);
@@ -126,10 +162,46 @@ export default function SettingsScreen() {
           />
         </Section>
 
+        {/* Connections */}
+        <Section title="Connections">
+          <Field label="Google OAuth Client ID">
+            <TextInput
+              style={styles.input}
+              value={form.googleClientId}
+              onChangeText={v => update('googleClientId', v)}
+              placeholder="xxxx.apps.googleusercontent.com"
+              placeholderTextColor={Colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </Field>
+          <View style={styles.connectRow}>
+            <View style={styles.connectStatus}>
+              <View style={[styles.connectDot, gcalConnected && styles.connectDotOn]} />
+              <Text style={styles.connectLabel}>
+                Google Calendar — {gcalConnected ? 'Connected' : 'Not connected'}
+              </Text>
+            </View>
+            {gcalConnected ? (
+              <TouchableOpacity style={styles.disconnectBtn} onPress={handleGcalDisconnect}>
+                <Text style={styles.disconnectBtnText}>Disconnect</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.connectBtn, gcalLoading && styles.connectBtnDisabled]}
+                onPress={handleGcalConnect}
+                disabled={gcalLoading}
+              >
+                <Text style={styles.connectBtnText}>{gcalLoading ? 'Connecting...' : 'Connect'}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </Section>
+
         {/* Info */}
         <Card style={styles.info}>
           <Text style={styles.infoText}>
-            ℹ️  Athena stores all data locally on your device. API keys are never sent anywhere except directly to Anthropic and OpenAI.
+            Athena stores all data locally on your device. API keys are never sent anywhere except directly to Anthropic, OpenAI, and Google.
           </Text>
         </Card>
 
@@ -226,6 +298,35 @@ const styles = StyleSheet.create({
   chipActive: { borderColor: Colors.primary, backgroundColor: Colors.primaryDim },
   chipText: { color: Colors.textSecondary, fontSize: 13 },
   chipTextActive: { color: Colors.primary },
+  connectRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+  },
+  connectStatus: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
+  connectDot: {
+    width: 8, height: 8, borderRadius: 4,
+    backgroundColor: Colors.textMuted,
+  },
+  connectDotOn: { backgroundColor: Colors.success },
+  connectLabel: { color: Colors.text, fontSize: 14 },
+  connectBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 8,
+  },
+  connectBtnDisabled: { opacity: 0.5 },
+  connectBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  disconnectBtn: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 8,
+  },
+  disconnectBtnText: { color: Colors.textMuted, fontSize: 13 },
   info: {
     marginTop: Spacing.md,
     borderColor: Colors.borderGlow,
