@@ -42,6 +42,7 @@ const DEFAULT_SETTINGS: AthenaSettings = {
     habitReminders: true,
   },
   wakeWord: false,
+  bufferAccessToken: '',
 };
 
 export function AthenaProvider({ children }: { children: React.ReactNode }) {

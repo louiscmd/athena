@@ -10,6 +10,9 @@ import { Colors, Spacing, Radius } from '@/constants/theme';
 import {
   connectGoogleCalendar, disconnectGoogleCalendar, isGoogleCalendarConnected,
 } from '@/lib/google-calendar';
+import {
+  verifyBufferToken, saveBufferToken, disconnectBuffer, isBufferConnected,
+} from '@/lib/buffer';
 import { getUser, signOut } from '@/lib/auth';
 import { isSupabaseConfigured } from '@/lib/supabase';
 
@@ -18,10 +21,13 @@ export default function SettingsScreen() {
   const [form, setForm] = useState({ ...settings });
   const [gcalConnected, setGcalConnected] = useState(false);
   const [gcalLoading, setGcalLoading] = useState(false);
+  const [bufferConnected, setBufferConnected] = useState(false);
+  const [bufferLoading, setBufferLoading] = useState(false);
   const [userEmail, setUserEmail] = useState('');
 
   useEffect(() => {
     setGcalConnected(isGoogleCalendarConnected());
+    setBufferConnected(isBufferConnected());
     if (isSupabaseConfigured) {
       getUser().then(u => { if (u) setUserEmail(u.email); });
     }
@@ -41,6 +47,29 @@ export default function SettingsScreen() {
   function handleGcalDisconnect() {
     disconnectGoogleCalendar();
     setGcalConnected(false);
+  }
+
+  async function handleBufferConnect() {
+    const token = form.bufferAccessToken?.trim();
+    if (!token) {
+      Alert.alert('Missing Token', 'Paste your Buffer Access Token first.');
+      return;
+    }
+    setBufferLoading(true);
+    const user = await verifyBufferToken(token);
+    setBufferLoading(false);
+    if (user) {
+      saveBufferToken(token);
+      setBufferConnected(true);
+      Alert.alert('Connected!', `Buffer connected as ${user.name}.`);
+    } else {
+      Alert.alert('Invalid Token', 'Could not connect to Buffer. Check your access token.');
+    }
+  }
+
+  function handleBufferDisconnect() {
+    disconnectBuffer();
+    setBufferConnected(false);
   }
 
   async function handleSave() {
@@ -133,7 +162,7 @@ export default function SettingsScreen() {
               autoCorrect={false}
             />
           </Field>
-          <Field label="OpenAI API Key (for Whisper STT)">
+          <Field label="OpenAI API Key (ChatGPT research + Whisper STT)">
             <TextInput
               style={styles.input}
               value={form.openAiApiKey}
@@ -145,6 +174,9 @@ export default function SettingsScreen() {
               autoCorrect={false}
             />
           </Field>
+          <Text style={styles.fieldHint}>
+            When set, Athena automatically queries ChatGPT for factual questions, current info, and research — then synthesizes the answer for you.
+          </Text>
         </Section>
 
         {/* ElevenLabs Voice */}
@@ -265,6 +297,46 @@ export default function SettingsScreen() {
                 disabled={gcalLoading}
               >
                 <Text style={styles.connectBtnText}>{gcalLoading ? 'Connecting...' : 'Connect'}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </Section>
+
+        {/* Buffer */}
+        <Section title="Buffer — Social Scheduling">
+          <Field label="Buffer Access Token">
+            <TextInput
+              style={styles.input}
+              value={form.bufferAccessToken ?? ''}
+              onChangeText={v => update('bufferAccessToken', v)}
+              placeholder="Paste your Buffer access token"
+              placeholderTextColor={Colors.textMuted}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </Field>
+          <Text style={styles.fieldHint}>
+            Get your token at buffer.com → Settings → Apps & API → Access Token. Athena can then schedule posts by voice: "Schedule a post on Instagram saying..."
+          </Text>
+          <View style={styles.connectRow}>
+            <View style={styles.connectStatus}>
+              <View style={[styles.connectDot, bufferConnected && styles.connectDotOn]} />
+              <Text style={styles.connectLabel}>
+                Buffer — {bufferConnected ? 'Connected' : 'Not connected'}
+              </Text>
+            </View>
+            {bufferConnected ? (
+              <TouchableOpacity style={styles.disconnectBtn} onPress={handleBufferDisconnect}>
+                <Text style={styles.disconnectBtnText}>Disconnect</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.connectBtn, bufferLoading && styles.connectBtnDisabled]}
+                onPress={handleBufferConnect}
+                disabled={bufferLoading}
+              >
+                <Text style={styles.connectBtnText}>{bufferLoading ? 'Verifying...' : 'Connect'}</Text>
               </TouchableOpacity>
             )}
           </View>

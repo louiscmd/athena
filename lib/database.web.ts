@@ -207,6 +207,7 @@ const DEFAULT_SETTINGS: AthenaSettings = {
   currency: 'USD',
   notifications: { dailyBriefing: true, briefingTime: '08:00', taskReminders: true, habitReminders: true },
   wakeWord: false,
+  bufferAccessToken: '',
 };
 
 export async function getSettings(): Promise<AthenaSettings> {

@@ -2,6 +2,16 @@ import Anthropic from '@anthropic-ai/sdk';
 import { getSettings, getAthenaContext, getRecentMessages } from './database';
 import type { AthenaResponse } from '@/types';
 
+// Dynamic import of OpenAI helper (web only — no-op on native)
+let _queryChatGPT: ((q: string, key: string) => Promise<string>) | null = null;
+let _needsResearch: ((msg: string) => boolean) | null = null;
+if (typeof window !== 'undefined') {
+  import('./openai.web').then(m => {
+    _queryChatGPT  = m.queryChatGPT;
+    _needsResearch = m.needsResearch;
+  }).catch(() => {});
+}
+
 const MODEL = 'claude-sonnet-5-20251101';
 
 function buildSystemPrompt(userName: string, context: string, shouldGreet = false): string {
@@ -64,6 +74,10 @@ AVAILABLE ACTION TYPES:
 - add_finance: { type, amount, currency, category, description, date }
 - create_note: { title, content, tags?, pinned? }
 - open_screen: { screen: "schedule"|"tasks"|"habits"|"finance"|"goals"|"notes" }
+- schedule_post: { text, platform: "instagram"|"twitter"|"linkedin"|"facebook", scheduledAt? (ISO timestamp, omit = queue) }
+
+CHATGPT RESEARCH:
+If CHATGPT RESEARCH data is provided in the context, use it as a factual source to answer the user's question. Synthesize it naturally into your reply — don't say "according to ChatGPT".
 
 EXAMPLES:
 User: "Schedule a team meeting for tomorrow at 2 PM"
@@ -71,6 +85,9 @@ User: "Schedule a team meeting for tomorrow at 2 PM"
 
 User: "I spent $45 on groceries today"
 → { "reply": "Logged — $45 for groceries.", "actions": [{ "type": "add_finance", "data": { "type": "expense", "amount": 45, "category": "food", "description": "Groceries", "date": ... } }] }
+
+User: "Schedule a post on Instagram saying we're launching next week"
+→ { "reply": "Got it — queued that post for Instagram.", "actions": [{ "type": "schedule_post", "data": { "text": "We're launching next week! Stay tuned.", "platform": "instagram" } }] }
 
 User: "What's on my plate today?"
 → { "reply": "You have 3 tasks due today..." }`;
@@ -166,6 +183,24 @@ export async function askAthena(
   const context = await getAthenaContext();
   const history = await getRecentMessages(10);
 
+  // ── ChatGPT research boost ─────────────────────────────────────────────────
+  let researchContext = '';
+  if (
+    settings.openAiApiKey &&
+    _queryChatGPT &&
+    _needsResearch &&
+    _needsResearch(userMessage)
+  ) {
+    try {
+      const gptAnswer = await _queryChatGPT(userMessage, settings.openAiApiKey);
+      if (gptAnswer) {
+        researchContext = `\n\nCHATGPT RESEARCH (use this to answer factual questions):\n${gptAnswer}`;
+      }
+    } catch (e) {
+      console.warn('ChatGPT research failed:', e);
+    }
+  }
+
   const messages: Anthropic.MessageParam[] = [
     ...history.map(m => ({
       role: m.role === 'user' ? 'user' as const : 'assistant' as const,
@@ -178,7 +213,7 @@ export async function askAthena(
     const response = await client.messages.create({
       model: MODEL,
       max_tokens: 512,
-      system: buildSystemPrompt(settings.userName, context, shouldGreet),
+      system: buildSystemPrompt(settings.userName, context + researchContext, shouldGreet),
       messages,
     });
 

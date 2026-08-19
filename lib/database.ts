@@ -355,6 +355,7 @@ const DEFAULT_SETTINGS: AthenaSettings = {
     habitReminders: true,
   },
   wakeWord: false,
+  bufferAccessToken: '',
 };
 
 export async function getSettings(): Promise<AthenaSettings> {

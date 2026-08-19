@@ -20,7 +20,8 @@ export interface AthenaAction {
     | 'schedule_notification'
     | 'delete_item'
     | 'update_item'
-    | 'open_screen';
+    | 'open_screen'
+    | 'schedule_post';      // Buffer — schedule a social media post
   data: Record<string, unknown>;
 }
 
@@ -143,12 +144,13 @@ export interface Note {
 export interface AthenaSettings {
   userName: string;
   anthropicApiKey: string;
-  openAiApiKey: string;     // Optional, for Whisper STT
+  openAiApiKey: string;     // OpenAI key — Whisper STT + ChatGPT research
   googleClientId: string;   // Google OAuth client ID
   spotifyClientId: string;    // Spotify app client ID (unused)
   youtubeApiKey: string;      // YouTube Data API v3 key
   elevenLabsApiKey: string;   // ElevenLabs TTS API key
   elevenLabsVoiceId: string;  // ElevenLabs voice ID
+  bufferAccessToken: string;  // Buffer API access token
   voice: {
     speed: number;          // 0.5–2.0
     pitch: number;          // 0.5–2.0

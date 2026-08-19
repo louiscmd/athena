@@ -12,6 +12,10 @@ import { elevenLabsSpeak, stopElevenLabs } from '@/lib/elevenlabs';
 import { router } from 'expo-router';
 import type { AthenaAction, AthenaSettings } from '@/types';
 
+// Dynamic import of Buffer (web only — .web.ts resolved by Metro)
+let _schedulePostByService: ((text: string, service: string, at?: string) => Promise<string>) | null = null;
+import('@/lib/buffer.web').then(m => { _schedulePostByService = m.schedulePostByService; }).catch(() => {});
+
 // ─── Greeting (once per hour) ─────────────────────────────────────────────────
 
 function checkGreeting(): boolean {
@@ -302,6 +306,17 @@ export function useVoiceInteraction() {
               pinned:  (action.data.pinned as boolean) ?? false,
             });
             break;
+          case 'schedule_post': {
+            if (_schedulePostByService) {
+              const msg = await _schedulePostByService(
+                action.data.text as string,
+                (action.data.platform as string) ?? 'instagram',
+                action.data.scheduledAt as string | undefined,
+              );
+              console.log('Buffer result:', msg);
+            }
+            break;
+          }
           case 'open_screen': {
             const map: Record<string, string> = {
               schedule: '/(tabs)/schedule',
