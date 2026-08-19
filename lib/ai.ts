@@ -47,24 +47,14 @@ BEHAVIORAL RULES:
 7. You remember everything in the context above — reference it naturally.
 
 RESPONSE FORMAT:
-Always respond in this JSON format (the "reply" is what you speak aloud):
+Always respond with VALID JSON only — no comments, no markdown fences, no explanation before or after. Use this exact structure:
 
-{
-  "reply": "Your spoken response here.",
-  "actions": [
-    // Optional — include only when creating/updating/deleting data
-    {
-      "type": "create_task",
-      "data": {
-        "title": "Task title",
-        "priority": "medium",
-        "category": "personal",
-        "dueDate": 1700000000000,
-        "dueTime": "09:00"
-      }
-    }
-  ]
-}
+{"reply":"Your spoken response here.","actions":[{"type":"create_task","data":{"title":"Task title","priority":"medium","category":"personal"}}]}
+
+For conversational replies with no data changes, omit actions or use an empty array:
+{"reply":"You have three tasks today."}
+
+CRITICAL: The actions array contains objects. DO NOT include JavaScript comments (//) inside JSON. JSON does not support comments.
 
 AVAILABLE ACTION TYPES:
 - create_task: { title, description?, priority, category, dueDate?, dueTime? }
@@ -187,6 +177,7 @@ export async function askAthena(
   const history = await getRecentMessages(10);
 
   // ── ChatGPT research boost ─────────────────────────────────────────────────
+  // Only triggers on very explicit research/lookup phrases — not routine commands.
   let researchContext = '';
   if (
     settings.openAiApiKey &&
@@ -195,7 +186,10 @@ export async function askAthena(
     _needsResearch(userMessage)
   ) {
     try {
+      console.log('[Athena] Running ChatGPT research...');
+      const t0 = Date.now();
       const gptAnswer = await _queryChatGPT(userMessage, settings.openAiApiKey);
+      console.log(`[Athena] ChatGPT research done in ${Date.now() - t0}ms`);
       if (gptAnswer) {
         researchContext = `\n\nCHATGPT RESEARCH (use this to answer factual questions):\n${gptAnswer}`;
       }
@@ -213,21 +207,31 @@ export async function askAthena(
   ];
 
   try {
+    console.log('[Athena] Calling Claude API...');
+    const t0 = Date.now();
     const response = await client.messages.create({
       model: MODEL,
       max_tokens: 1024,
       system: buildSystemPrompt(settings.userName, context + researchContext, shouldGreet),
       messages,
     });
+    console.log(`[Athena] Claude responded in ${Date.now() - t0}ms`);
 
-    const raw = response.content[0].type === 'text' ? response.content[0].text : '';
+    const rawFull = response.content[0].type === 'text' ? response.content[0].text : '';
+    // Strip markdown fences (```json ... ``` or ``` ... ```) if present
+    const raw = rawFull.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+    console.log('[Athena] Raw response:', raw.slice(0, 200));
 
     // Robust JSON extraction: walk balanced braces instead of greedy regex.
     // Greedy regex fails if Claude adds any character after the closing }.
     const parsed = extractJSON(raw);
-    if (parsed) return parsed;
+    if (parsed) {
+      console.log('[Athena] Parsed OK — actions:', JSON.stringify(parsed.actions ?? []));
+      return parsed;
+    }
 
     // Fallback: treat as plain text reply
+    console.warn('[Athena] JSON parse failed — raw text reply. Content was:', raw.slice(0, 300));
     return { reply: raw.trim() };
   } catch (err) {
     console.error('Athena AI error:', err);

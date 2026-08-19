@@ -41,20 +41,20 @@ export async function queryChatGPT(
 }
 
 /**
- * Detect whether a message likely needs external knowledge / research.
- * Heuristic: questions about current events, prices, people, facts, "what is", etc.
+ * Detect whether a message explicitly requests external research.
+ * CONSERVATIVE — only fires on clear lookup/research intent.
+ * Routine commands ("add a task", "what do I have today", "schedule a meeting") do NOT trigger this.
  */
 export function needsResearch(message: string): boolean {
   const m = message.toLowerCase();
+  // Only trigger on explicit research / lookup intent:
   const triggers = [
-    'what is ', 'what are ', 'who is ', 'who are ',
-    'how much ', 'how many ', 'when did ', 'when is ',
-    'current ', 'latest ', 'recent ', 'today ',
-    'news ', 'price of ', 'cost of ',
-    'tell me about ', 'explain ', 'define ',
-    'search ', 'look up ', 'find out ',
+    'search for ', 'look up ', 'find out ', 'look up ',
     'ask chatgpt', 'ask gpt', 'google ',
-    'weather', 'stock', 'currency',
+    'research ', 'search the web', 'browse ',
+    'latest news', 'current news', 'news about ',
+    'stock price', 'price of bitcoin', 'crypto price',
+    'what\'s the weather', 'weather in ', 'weather forecast',
   ];
   return triggers.some(t => m.includes(t));
 }
