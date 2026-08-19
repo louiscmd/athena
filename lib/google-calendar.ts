@@ -13,6 +13,7 @@ export interface GoogleCalendarEvent {
 }
 
 export async function connectGoogleCalendar(_clientId: string): Promise<boolean> { return false; }
+export function handleGoogleCallback(): boolean { return false; }
 export function isGoogleCalendarConnected(): boolean { return false; }
 export function disconnectGoogleCalendar(): void {}
 export async function getGoogleCalendarEvents(_from: number, _to: number): Promise<GoogleCalendarEvent[]> { return []; }

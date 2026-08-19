@@ -18,6 +18,11 @@ export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseKey);
 
 export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseKey, {
-      auth: { persistSession: true, autoRefreshToken: true, storageKey: 'athena_auth' },
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        storageKey: 'athena_auth',
+        detectSessionInUrl: false, // Prevent Supabase from consuming Google's #access_token hash
+      },
     })
   : null;

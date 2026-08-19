@@ -1,11 +1,21 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Platform } from 'react-native';
+import { useEffect } from 'react';
 import { AthenaProvider } from '@/contexts/AthenaContext';
 import { Colors } from '@/constants/theme';
+import { handleGoogleCallback } from '@/lib/google-calendar';
 
 export default function RootLayout() {
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      // Parse Google Calendar OAuth redirect (#access_token=... in hash)
+      const connected = handleGoogleCallback();
+      if (connected) console.log('Google Calendar connected via OAuth redirect');
+    }
+  }, []);
+
   return (
     <GestureHandlerRootView style={styles.root}>
       <AthenaProvider>

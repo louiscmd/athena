@@ -33,13 +33,9 @@ export default function SettingsScreen() {
       Alert.alert('Missing Client ID', 'Enter your Google OAuth Client ID first.');
       return;
     }
-    setGcalLoading(true);
-    // Save client ID before opening popup
+    // Save settings first, then redirect to Google — page will navigate away
     await updateSettings({ ...settings, ...form });
-    const ok = await connectGoogleCalendar(clientId);
-    setGcalConnected(ok);
-    setGcalLoading(false);
-    if (!ok) Alert.alert('Connection failed', 'Make sure the Client ID is correct and this origin is authorized in Google Cloud Console.');
+    await connectGoogleCalendar(clientId); // triggers window.location redirect
   }
 
   function handleGcalDisconnect() {
