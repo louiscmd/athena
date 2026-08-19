@@ -9,8 +9,10 @@ import { Colors, Spacing, Radius } from '@/constants/theme';
 import { signIn, signUp, getUser } from '@/lib/auth';
 import { syncFromCloud } from '@/lib/sync';
 import { isSupabaseConfigured } from '@/lib/supabase';
+import { useAthena } from '@/contexts/AthenaContext';
 
 export default function LoginScreen() {
+  const { loadSettings } = useAthena();
   const [tab, setTab] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -20,11 +22,13 @@ export default function LoginScreen() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // If already logged in, go straight to the app
+  // If already logged in, sync and go straight to the app
   useEffect(() => {
-    getUser().then(user => {
+    getUser().then(async user => {
       if (user) {
-        syncFromCloud().then(() => router.replace('/'));
+        await syncFromCloud();
+        await loadSettings(); // refresh React state with cloud data
+        router.replace('/');
       } else {
         setChecking(false);
       }
@@ -76,8 +80,9 @@ export default function LoginScreen() {
         setConfirmPassword('');
       } else {
         await signIn(e, p);
-        // Sync cloud data into localStorage before entering the app
+        // Pull cloud data → update localStorage → refresh React state
         await syncFromCloud();
+        await loadSettings();
         router.replace('/');
       }
     } catch (err: any) {

@@ -1,5 +1,16 @@
-// Web-specific voice hook — wake word engine + conversation loop
-// Metro resolves useVoice.web.ts over useVoice.ts on web builds.
+// hooks/useVoice.web.ts
+// Two-phase speech recognition engine:
+//
+// PHASE 1 — "dormant": continuous SpeechRecognition listening only for "Athena"
+// PHASE 2 — "listening": continuous:FALSE SpeechRecognition for the command
+//
+// Why two phases instead of one continuous instance?
+// - continuous:true makes isFinal unreliable in Chrome (sometimes never fires)
+// - continuous:false always fires isFinal + onend when the user stops speaking
+// - Switching instances avoids the abort() → onend → restart loop that
+//   causes the mic indicator to flicker
+//
+// Metro resolves .web.ts over .ts on web builds automatically.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAthena } from '@/contexts/AthenaContext';
@@ -12,11 +23,11 @@ import { elevenLabsSpeak, stopElevenLabs } from '@/lib/elevenlabs';
 import { router } from 'expo-router';
 import type { AthenaAction, AthenaSettings } from '@/types';
 
-// Dynamic import of Buffer (web only — .web.ts resolved by Metro)
+// Dynamic import of Buffer (web only, may not exist on older builds)
 let _schedulePostByService: ((text: string, service: string, at?: string) => Promise<string>) | null = null;
 import('@/lib/buffer.web').then(m => { _schedulePostByService = m.schedulePostByService; }).catch(() => {});
 
-// ─── Greeting (once per hour) ─────────────────────────────────────────────────
+// ─── Greeting (once per hour) ──────────────────────────────────────────────────
 
 function checkGreeting(): boolean {
   try {
@@ -29,147 +40,188 @@ function checkGreeting(): boolean {
   } catch { return false; }
 }
 
-// ─── Hook ─────────────────────────────────────────────────────────────────────
+// ─── Hook ──────────────────────────────────────────────────────────────────────
 
 export function useVoiceInteraction() {
   const { mode, setMode, settings, setAmplitude } = useAthena();
 
-  // Refs — always current, safe inside callbacks
-  const settingsRef    = useRef(settings);
-  const modeRef        = useRef(mode);
-  const processingRef  = useRef(false);
-  const recRef         = useRef<any>(null);
-  const activeRef      = useRef(false);       // recognition running?
-  const inCommandRef   = useRef(false);       // past wake word, capturing cmd?
-  const followUpRef    = useRef(false);       // in follow-up window?
-  const silenceTimer   = useRef<any>(null);
-  const followUpTimer  = useRef<any>(null);
-  const pendingCmd     = useRef('');
-
+  // Always-current refs — safe inside async callbacks
+  const settingsRef   = useRef(settings);
+  const modeRef       = useRef(mode);
   settingsRef.current = settings;
   modeRef.current     = mode;
 
   const [transcript, setTranscript] = useState('');
 
-  // ── Silence helpers ──────────────────────────────────────────────────────
-  function clearSilence() {
-    if (silenceTimer.current) { clearTimeout(silenceTimer.current); silenceTimer.current = null; }
+  // ── Phase refs ─────────────────────────────────────────────────────────────
+  type Phase = 'dormant' | 'listening' | 'processing';
+  const phaseRef       = useRef<Phase>('dormant');
+  const processingRef  = useRef(false);
+  const followUpRef    = useRef(false);
+  const followUpTimer  = useRef<any>(null);
+  const stoppedRef     = useRef(false); // set true when mic is denied or hook unmounts
+
+  // ── Recognition instances ───────────────────────────────────────────────────
+  // p1 = wake word (continuous), p2 = command capture (continuous:false)
+  const p1Ref        = useRef<any>(null);
+  const p2Ref        = useRef<any>(null);
+  const switchingRef = useRef(false); // true while we intentionally abort p1 to start p2
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  function getSRClass() {
+    return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
   }
 
-  function armSilence(delayMs = 1600) {
-    clearSilence();
-    silenceTimer.current = setTimeout(() => {
-      const cmd = pendingCmd.current.trim();
-      pendingCmd.current = '';
-      inCommandRef.current  = false;
-      followUpRef.current   = false;
-      setTranscript('');
-      if (cmd.length > 1) {
-        runCommand(cmd);
-      } else {
-        setMode('idle');
-      }
-    }, delayMs);
+  function extractCommand(segment: string): string {
+    // Strip the wake word and leading punctuation
+    const idx = segment.toLowerCase().indexOf('athena');
+    if (idx === -1) return segment.trim();
+    return segment
+      .slice(idx + 6)
+      .replace(/^[,\s!?—.]+/, '')
+      .trim();
   }
 
-  // ── SpeechRecognition ─────────────────────────────────────────────────────
-  function startRec() {
-    if (!activeRef.current) return;
-    const SRClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+  // ── Phase 1: wake word listener ────────────────────────────────────────────
+
+  function startWakeWordRec() {
+    if (stoppedRef.current) return;
+    if (phaseRef.current !== 'dormant') return;
+
+    const SRClass = getSRClass();
     if (!SRClass) { console.warn('SpeechRecognition not available — use Chrome'); return; }
-
-    try { recRef.current?.abort(); } catch {}
 
     const rec = new SRClass();
     rec.continuous     = true;
     rec.interimResults = true;
     rec.lang           = 'en-US';
-    recRef.current     = rec;
+    p1Ref.current      = rec;
 
     rec.onresult = (event: any) => {
-      // Collect the latest transcript segment
+      // Don't act if we've already switched phases
+      if (phaseRef.current !== 'dormant') return;
+
       let segment = '';
-      let isFinal = false;
       for (let i = event.resultIndex; i < event.results.length; i++) {
         segment += event.results[i][0].transcript;
-        if (event.results[i].isFinal) isFinal = true;
       }
       segment = segment.toLowerCase().trim();
 
-      const inFollowUp = followUpRef.current;
-      const inCommand  = inCommandRef.current;
+      if (!segment.includes('athena')) return;
 
-      if (!inCommand && !inFollowUp) {
-        // ── Dormant: listen for wake word ──────────────────────────────────
-        if (!segment.includes('athena')) return;
+      const cmd = extractCommand(segment);
 
-        const after = segment
-          .slice(segment.indexOf('athena') + 6)
-          .replace(/^[,\s!?—]+/, '')
-          .trim();
-
-        inCommandRef.current = true;
-        pendingCmd.current   = after;
-        setMode('listening');
-        setTranscript(after || '...');
-
-        if (isFinal && after.length > 2) {
-          // Full command in same utterance ("Athena, add a task…")
-          clearSilence();
-          inCommandRef.current = false;
-          pendingCmd.current   = '';
-          setTranscript('');
-          runCommand(after);
-        } else {
-          armSilence();
-        }
+      if (cmd.length > 2) {
+        // Full command in the same breath: "Athena, open my tasks"
+        phaseRef.current = 'processing';
+        switchingRef.current = true;
+        try { rec.abort(); } catch {}
+        setMode('thinking');
+        runCommand(cmd);
       } else {
-        // ── Command mode / follow-up: accumulate ───────────────────────────
-        const cleaned = segment.replace(/^athena[,\s!?—]*/i, '').trim();
-        const cmd = cleaned || segment;
-        pendingCmd.current = cmd;
-        setTranscript(cmd);
-
-        if (isFinal && cmd.length > 1) {
-          // Final result → submit immediately
-          clearSilence();
-          inCommandRef.current = false;
-          followUpRef.current  = false;
-          pendingCmd.current   = '';
-          setTranscript('');
-          runCommand(cmd);
-        } else {
-          armSilence(1600);
-        }
+        // Just the wake word — switch to command capture
+        phaseRef.current = 'listening';
+        switchingRef.current = true;
+        try { rec.abort(); } catch {}
+        setMode('listening');
+        startCommandRec();
       }
     };
 
     rec.onend = () => {
-      // Auto-restart unless we're speaking or stopped
-      if (activeRef.current && modeRef.current !== 'speaking') {
-        setTimeout(startRec, 200);
+      // Intentional switch to phase 2 — don't restart
+      if (switchingRef.current) { switchingRef.current = false; return; }
+      // Chrome timed out (continuous sessions expire ~60s) — restart phase 1
+      if (!stoppedRef.current && phaseRef.current === 'dormant') {
+        setTimeout(startWakeWordRec, 300);
       }
     };
 
     rec.onerror = (e: any) => {
-      if (e.error === 'not-allowed') { activeRef.current = false; return; }
-      if (activeRef.current) setTimeout(startRec, 500);
+      if (e.error === 'not-allowed') {
+        console.warn('Microphone access denied');
+        stoppedRef.current = true;
+      }
+      // other errors: onend will fire next and handle restart
     };
 
     try { rec.start(); } catch {}
   }
 
-  function stopRec() {
-    try { recRef.current?.abort(); } catch {}
-    recRef.current = null;
+  // ── Phase 2: command capture ────────────────────────────────────────────────
+  // continuous:false → Chrome always fires isFinal then onend when speech ends.
+  // This is the key to reliable command detection.
+
+  function startCommandRec() {
+    if (stoppedRef.current) return;
+    phaseRef.current = 'listening';
+
+    const SRClass = getSRClass();
+    if (!SRClass) return;
+
+    const rec = new SRClass();
+    rec.continuous     = false; // ← KEY: guarantees isFinal fires
+    rec.interimResults = true;
+    rec.lang           = 'en-US';
+    p2Ref.current      = rec;
+
+    let lastText = '';
+    let gotFinal = false;
+
+    rec.onresult = (event: any) => {
+      let segment = '';
+      let isFinal = false;
+      for (let i = 0; i < event.results.length; i++) {
+        segment += event.results[i][0].transcript;
+        if (event.results[i].isFinal) isFinal = true;
+      }
+      // Remove wake word if user repeated "Athena, ..."
+      const cmd = extractCommand(segment) || segment.trim();
+      lastText = cmd;
+      setTranscript(cmd);
+
+      if (isFinal && cmd.length > 0) {
+        gotFinal = true;
+        phaseRef.current = 'processing';
+        setTranscript('');
+        runCommand(cmd);
+      }
+    };
+
+    rec.onend = () => {
+      p2Ref.current = null;
+      if (gotFinal) return; // command already dispatched in onresult
+
+      if (phaseRef.current === 'listening') {
+        if (lastText.length > 0) {
+          // Got partial text without isFinal (Chrome cut off) — process anyway
+          phaseRef.current = 'processing';
+          setTranscript('');
+          runCommand(lastText);
+        } else {
+          // Silence / no speech detected — go back to dormant
+          phaseRef.current = 'dormant';
+          setMode('idle');
+          setTranscript('');
+          startWakeWordRec();
+        }
+      }
+    };
+
+    rec.onerror = (e: any) => {
+      if (e.error === 'not-allowed') { stoppedRef.current = true; }
+      // onend fires next
+    };
+
+    try { rec.start(); } catch {}
   }
 
-  // ── Process a command through Claude ─────────────────────────────────────
+  // ── Process a command ──────────────────────────────────────────────────────
+
   async function runCommand(text: string) {
     if (processingRef.current) return;
     processingRef.current = true;
-    activeRef.current = false;
-    stopRec();
 
     setMode('thinking');
     setTranscript('');
@@ -193,29 +245,35 @@ export function useVoiceInteraction() {
       processingRef.current = false;
       setMode('idle');
       setAmplitude(0);
-      // Open follow-up window then restart recognition
-      followUpRef.current = true;
-      inCommandRef.current = false;
-      if (followUpTimer.current) clearTimeout(followUpTimer.current);
-      followUpTimer.current = setTimeout(() => { followUpRef.current = false; }, 6000);
-      activeRef.current = true;
-      setTimeout(startRec, 500);
+      phaseRef.current = 'dormant';
+
+      if (!stoppedRef.current) {
+        // Open 6s follow-up window (no need to say "Athena" again)
+        followUpRef.current = true;
+        if (followUpTimer.current) clearTimeout(followUpTimer.current);
+        followUpTimer.current = setTimeout(() => { followUpRef.current = false; }, 6000);
+
+        // Start capturing immediately for the follow-up
+        setTimeout(() => {
+          if (!stoppedRef.current) startCommandRec();
+        }, 400);
+      }
     }
   }
 
-  // ── TTS ───────────────────────────────────────────────────────────────────
+  // ── TTS ────────────────────────────────────────────────────────────────────
+
   async function speakReply(text: string, s: AthenaSettings) {
     const hasEl = s.elevenLabsApiKey?.trim() && s.elevenLabsVoiceId?.trim();
     if (hasEl) {
       try {
-        // Wrap in a promise that resolves when audio finishes (onDone callback)
         await new Promise<void>((resolve, reject) => {
           elevenLabsSpeak(
             text,
             s.elevenLabsApiKey!.trim(),
             s.elevenLabsVoiceId!.trim(),
             (amp) => setAmplitude(amp),
-            resolve, // called by source.onended
+            resolve, // onDone resolves the promise
           ).catch(reject);
         });
         return;
@@ -225,10 +283,11 @@ export function useVoiceInteraction() {
     }
     // Browser TTS fallback
     await new Promise<void>(resolve => {
+      window.speechSynthesis?.cancel();
       const u = new SpeechSynthesisUtterance(text);
-      u.lang  = s.voice?.language ?? 'en-US';
-      u.rate  = s.voice?.speed   ?? 0.95;
-      u.onend = () => resolve();
+      u.lang   = s.voice?.language ?? 'en-US';
+      u.rate   = s.voice?.speed   ?? 0.95;
+      u.onend  = () => resolve();
       u.onerror = () => resolve();
       window.speechSynthesis.speak(u);
     });
@@ -237,24 +296,24 @@ export function useVoiceInteraction() {
   const stopSpeaking = useCallback(() => {
     stopElevenLabs();
     window.speechSynthesis?.cancel();
-    setMode('idle');
     setAmplitude(0);
-    // Resume listening
-    activeRef.current = true;
-    setTimeout(startRec, 300);
-  }, []);
+    setMode('idle');
+    phaseRef.current = 'dormant';
+    if (!stoppedRef.current) setTimeout(startWakeWordRec, 300);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Actions ───────────────────────────────────────────────────────────────
+  // ── Actions ────────────────────────────────────────────────────────────────
+
   async function executeActions(actions: AthenaAction[], s: AthenaSettings) {
     for (const action of actions) {
       try {
         switch (action.type) {
           case 'create_task':
             await createTask({
-              title:       action.data.title as string,
-              priority:    (action.data.priority as any)  ?? 'medium',
-              category:    (action.data.category as any)  ?? 'personal',
-              completed:   false,
+              title:     action.data.title as string,
+              priority:  (action.data.priority as any)  ?? 'medium',
+              category:  (action.data.category as any)  ?? 'personal',
+              completed: false,
               ...(action.data.dueDate     ? { dueDate:     action.data.dueDate as number }     : {}),
               ...(action.data.dueTime     ? { dueTime:     action.data.dueTime as string }     : {}),
               ...(action.data.description ? { description: action.data.description as string } : {}),
@@ -306,17 +365,15 @@ export function useVoiceInteraction() {
               pinned:  (action.data.pinned as boolean) ?? false,
             });
             break;
-          case 'schedule_post': {
+          case 'schedule_post':
             if (_schedulePostByService) {
-              const msg = await _schedulePostByService(
+              await _schedulePostByService(
                 action.data.text as string,
                 (action.data.platform as string) ?? 'instagram',
                 action.data.scheduledAt as string | undefined,
               );
-              console.log('Buffer result:', msg);
             }
             break;
-          }
           case 'open_screen': {
             const map: Record<string, string> = {
               schedule: '/(tabs)/schedule',
@@ -337,26 +394,34 @@ export function useVoiceInteraction() {
     }
   }
 
-  // ── Init recognition on mount ─────────────────────────────────────────────
+  // ── Mount / unmount ────────────────────────────────────────────────────────
+
   useEffect(() => {
-    // Request mic permission
+    // Request mic permission upfront so Chrome shows the allow prompt
     navigator.mediaDevices?.getUserMedia({ audio: true })
-      .then(s => { s.getTracks().forEach(t => t.stop()); })
+      .then(stream => stream.getTracks().forEach(t => t.stop()))
       .catch(() => {});
 
-    activeRef.current = true;
-    startRec();
+    stoppedRef.current = false;
+    phaseRef.current   = 'dormant';
+    startWakeWordRec();
 
     return () => {
-      activeRef.current = false;
-      clearSilence();
+      stoppedRef.current = true;
       if (followUpTimer.current) clearTimeout(followUpTimer.current);
-      stopRec();
+      try { p1Ref.current?.abort(); } catch {}
+      try { p2Ref.current?.abort(); } catch {}
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Text input fallback ───────────────────────────────────────────────────
+  // ── Text input fallback ────────────────────────────────────────────────────
+
   const processMessage = useCallback(async (text: string) => {
+    if (processingRef.current) return;
+    phaseRef.current = 'processing';
+    // Stop any active recognition
+    try { p1Ref.current?.abort(); } catch {}
+    try { p2Ref.current?.abort(); } catch {}
     await runCommand(text);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

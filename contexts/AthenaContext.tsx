@@ -1,7 +1,7 @@
 import React, {
   createContext, useContext, useEffect, useRef, useState,
 } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { initDatabase, saveMessage, getSettings, saveSettings } from '@/lib/database';
 import { requestNotificationPermission } from '@/lib/notifications';
 import type { AthenaMode, AthenaSettings, Message } from '@/types';
@@ -53,22 +53,38 @@ export function AthenaProvider({ children }: { children: React.ReactNode }) {
   const [amplitude, setAmplitude] = useState(0);
   const msgCounter = useRef(0);
 
+  // ── Startup: init DB → load local settings → sync from cloud → reload ──────
   useEffect(() => {
     (async () => {
       await initDatabase();
-      const s = await getSettings();
-      setSettings(s);
+
+      // 1. Load whatever is in local storage immediately
+      const local = await getSettings();
+      setSettings(local);
+
+      // 2. On web: pull from Supabase cloud if the user is logged in.
+      //    This overwrites localStorage with the authoritative cloud copy,
+      //    then we re-read and update React state.
+      if (Platform.OS === 'web') {
+        try {
+          const { syncFromCloud } = await import('@/lib/sync');
+          const synced = await syncFromCloud();
+          if (synced) {
+            const cloud = await getSettings();
+            setSettings(cloud);
+          }
+        } catch { /* Supabase not configured or not logged in — fine */ }
+      }
+
       await requestNotificationPermission();
       setInitialized(true);
     })();
   }, []);
 
-  // Reset mode when app goes to background
+  // ── Reset mode when app goes to background ──────────────────────────────────
   useEffect(() => {
     const sub = AppState.addEventListener('change', state => {
-      if (state !== 'active') {
-        setMode('idle');
-      }
+      if (state !== 'active') setMode('idle');
     });
     return () => sub.remove();
   }, []);
@@ -76,7 +92,7 @@ export function AthenaProvider({ children }: { children: React.ReactNode }) {
   async function addMessage(msg: Omit<Message, 'id'>): Promise<void> {
     const id = `msg-${Date.now()}-${++msgCounter.current}`;
     const full: Message = { id, ...msg };
-    setMessages(prev => [...prev.slice(-49), full]); // Keep last 50
+    setMessages(prev => [...prev.slice(-49), full]);
     await saveMessage(msg);
   }
 
@@ -88,6 +104,12 @@ export function AthenaProvider({ children }: { children: React.ReactNode }) {
   async function updateSettings(s: AthenaSettings): Promise<void> {
     await saveSettings(s);
     setSettings(s);
+    // Schedule cloud push on web
+    if (Platform.OS === 'web') {
+      import('@/lib/sync')
+        .then(({ scheduleSyncToCloud }) => scheduleSyncToCloud())
+        .catch(() => {});
+    }
   }
 
   return (
