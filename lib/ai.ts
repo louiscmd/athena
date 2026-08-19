@@ -106,7 +106,7 @@ export interface DailyBriefData {
 }
 
 export async function generateDailyBrief(data: DailyBriefData, apiKey: string): Promise<string> {
-  const client = new Anthropic({ apiKey });
+  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
 
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-US', {
@@ -179,7 +179,10 @@ export async function askAthena(
     };
   }
 
-  const client = new Anthropic({ apiKey: settings.anthropicApiKey });
+  const client = new Anthropic({
+    apiKey: settings.anthropicApiKey,
+    dangerouslyAllowBrowser: true, // required — this is a browser SPA
+  });
   const context = await getAthenaContext();
   const history = await getRecentMessages(10);
 
