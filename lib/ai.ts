@@ -215,25 +215,55 @@ export async function askAthena(
   try {
     const response = await client.messages.create({
       model: MODEL,
-      max_tokens: 512,
+      max_tokens: 1024,
       system: buildSystemPrompt(settings.userName, context + researchContext, shouldGreet),
       messages,
     });
 
     const raw = response.content[0].type === 'text' ? response.content[0].text : '';
 
-    // Parse JSON response
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]) as AthenaResponse;
-      return parsed;
-    }
+    // Robust JSON extraction: walk balanced braces instead of greedy regex.
+    // Greedy regex fails if Claude adds any character after the closing }.
+    const parsed = extractJSON(raw);
+    if (parsed) return parsed;
 
     // Fallback: treat as plain text reply
-    return { reply: raw };
+    return { reply: raw.trim() };
   } catch (err) {
     console.error('Athena AI error:', err);
     const msg = err instanceof Error ? err.message : 'Unknown error';
     return { reply: `I encountered an error: ${msg}` };
   }
+}
+
+// ─── JSON extraction with balanced-brace walking ──────────────────────────────
+// More reliable than /\{[\s\S]*\}/ which fails when Claude appends trailing text.
+
+function extractJSON(text: string): AthenaResponse | null {
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        try {
+          return JSON.parse(text.slice(start, i + 1)) as AthenaResponse;
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
 }

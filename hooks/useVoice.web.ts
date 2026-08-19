@@ -291,26 +291,37 @@ export function useVoiceInteraction() {
       }
     }
 
-    // Browser TTS fallback — 8s hard timeout
+    // Browser TTS fallback — pick Chrome's Google voice (sounds human), 8s hard timeout
     console.log('[Athena] Speaking via browser TTS...');
     await new Promise<void>(resolve => {
       const timeout = setTimeout(() => {
-        console.warn('[Athena] Browser TTS timeout — may be blocked by autoplay policy. Click the page first.');
+        console.warn('[Athena] Browser TTS timeout — click the page once to unlock Chrome audio');
         resolve();
       }, 8_000);
 
       try {
         window.speechSynthesis?.cancel();
         const u = new SpeechSynthesisUtterance(text);
-        u.lang   = s.voice?.language ?? 'en-US';
-        u.rate   = s.voice?.speed   ?? 0.95;
+
+        // Pick the best available voice:
+        // Chrome's "Google US English" sounds natural; system voices are robotic.
+        const voices = window.speechSynthesis?.getVoices() ?? [];
+        const best =
+          voices.find(v => v.name === 'Google US English') ||
+          voices.find(v => v.name.toLowerCase().includes('google') && v.lang.startsWith('en')) ||
+          voices.find(v => v.lang === 'en-US' && v.name.toLowerCase().includes('female')) ||
+          voices.find(v => v.lang === 'en-US') ||
+          voices.find(v => v.lang.startsWith('en')) ||
+          null;
+
+        if (best) u.voice = best;
+        u.lang   = 'en-US';
+        u.rate   = 1.1;   // slightly faster = more natural, less robotic
+        u.pitch  = 1.0;
         u.volume = 1;
+
         u.onend  = () => { clearTimeout(timeout); resolve(); };
-        u.onerror = (e) => {
-          console.warn('[Athena] TTS error:', e);
-          clearTimeout(timeout);
-          resolve();
-        };
+        u.onerror = (e) => { console.warn('[Athena] TTS error:', e); clearTimeout(timeout); resolve(); };
         window.speechSynthesis?.speak(u);
       } catch (e) {
         console.warn('[Athena] SpeechSynthesis threw:', e);
