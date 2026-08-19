@@ -12,7 +12,7 @@ if (typeof window !== 'undefined') {
   }).catch(() => {});
 }
 
-const MODEL = 'claude-sonnet-5-20251101';
+const MODEL = 'claude-sonnet-5';
 
 function buildSystemPrompt(userName: string, context: string, shouldGreet = false): string {
   const now = new Date();
