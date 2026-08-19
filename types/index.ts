@@ -145,8 +145,10 @@ export interface AthenaSettings {
   anthropicApiKey: string;
   openAiApiKey: string;     // Optional, for Whisper STT
   googleClientId: string;   // Google OAuth client ID
-  spotifyClientId: string;  // Spotify app client ID (unused)
-  youtubeApiKey: string;    // YouTube Data API v3 key
+  spotifyClientId: string;    // Spotify app client ID (unused)
+  youtubeApiKey: string;      // YouTube Data API v3 key
+  elevenLabsApiKey: string;   // ElevenLabs TTS API key
+  elevenLabsVoiceId: string;  // ElevenLabs voice ID
   voice: {
     speed: number;          // 0.5–2.0
     pitch: number;          // 0.5–2.0

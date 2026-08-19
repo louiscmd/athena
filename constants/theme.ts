@@ -1,68 +1,60 @@
+// Athena — black / silver chrome palette
+
 export const Colors = {
   // Backgrounds
-  bg: '#060000',
-  bgSurface: '#0d0000',
-  bgCard: '#110000',
-  bgElevated: '#190000',
+  bg:         '#07070d',
+  bgSurface:  '#0d0d16',
+  bgCard:     '#0f0f1a',
+  bgElevated: '#14141f',
 
-  // Brand — red
-  primary: '#cc1500',
-  primaryDim: '#cc150022',
-  primaryGlow: '#cc150044',
-  secondary: '#ff3300',
-  secondaryDim: '#ff330022',
-  accent: '#ff5500',
+  // Chrome silver
+  primary:       '#b8b8cc',
+  primaryBright: '#d8d8f0',
+  primaryDim:    'rgba(184,184,204,0.10)',
+  primaryGlow:   'rgba(184,184,204,0.22)',
+  secondary:     '#888898',
 
-  // Text — warm near-white
-  text: '#fff0ee',
-  textSecondary: '#a07060',
-  textMuted: '#553030',
+  // Text
+  text:          '#eeeef8',
+  textSecondary: '#7878a0',
+  textMuted:     '#38384e',
 
   // Status
-  success: '#55cc44',
-  warning: '#dd8800',
-  error: '#ff1100',
+  success: '#5cb88a',
+  warning: '#c8a84b',
+  error:   '#cc5555',
+  danger:  '#cc5555',
 
   // Sphere
-  sphereCore: '#dd1100',
-  sphereGlow: '#880000',
-  sphereOuter: '#330000',
-  sphereRing: '#cc150066',
-  sphereParticle: '#ff2200',
+  sphereCore:     '#c8c8e0',
+  sphereGlow:     '#5a5a90',
+  sphereOuter:    '#18182a',
+  sphereParticle: '#e0e0f8',
 
-  // Border
-  border: '#200000',
-  borderGlow: '#cc150033',
+  // Borders
+  border:     '#1c1c2c',
+  borderGlow: 'rgba(184,184,204,0.16)',
 };
 
 export const Fonts = {
   regular: 'System',
-  mono: 'Courier New',
+  mono:    'Courier New',
 };
 
 export const Spacing = {
-  xs: 4,
-  sm: 8,
-  md: 16,
-  lg: 24,
-  xl: 32,
-  xxl: 48,
+  xs: 4, sm: 8, md: 16, lg: 24, xl: 32, xxl: 48,
 };
 
 export const Radius = {
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 24,
-  full: 9999,
+  sm: 8, md: 12, lg: 16, xl: 24, full: 9999,
 };
 
 export const Shadow = {
   glow: {
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowColor:   Colors.primary,
+    shadowOffset:  { width: 0, height: 0 },
+    shadowOpacity: 0.4,
+    shadowRadius:  14,
+    elevation:     8,
   },
 };

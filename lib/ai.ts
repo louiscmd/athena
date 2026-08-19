@@ -4,7 +4,7 @@ import type { AthenaResponse } from '@/types';
 
 const MODEL = 'claude-sonnet-5-20251101';
 
-function buildSystemPrompt(userName: string, context: string): string {
+function buildSystemPrompt(userName: string, context: string, shouldGreet = false): string {
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
@@ -21,15 +21,20 @@ USER'S NAME: ${userName || 'there'}
 
 ${context}
 
+GREETING RULE:
+${shouldGreet
+  ? `Start your reply with "Hello ${userName || 'there'}." — this is the first interaction in over an hour.`
+  : `Do NOT start with any greeting ("Hello", "Hi", "Hey", etc.) — the user already said hi recently. Jump straight to the answer.`
+}
+
 BEHAVIORAL RULES:
-1. Keep responses SHORT (2-4 sentences max) — this is a voice interface.
-2. Always be proactive — if you notice something in the user's data, mention it naturally.
+1. Keep responses SHORT (2-4 sentences max) — this is a voice interface. Never use bullet points or markdown.
+2. Speak naturally and conversationally, as if talking to a real person.
 3. When scheduling or creating items, ALWAYS respond with a JSON action block so the app can execute it.
-4. Address the user by name occasionally, but not every time.
-5. If you don't have enough info to complete a request, ask one clarifying question.
-6. For financial questions, always specify currency.
-7. Be encouraging about goals and habits without being patronizing.
-8. You remember everything in the context above — reference it naturally.
+4. If you don't have enough info to complete a request, ask one clarifying question.
+5. For financial questions, always specify currency.
+6. Be encouraging about goals and habits without being patronizing.
+7. You remember everything in the context above — reference it naturally.
 
 RESPONSE FORMAT:
 Always respond in this JSON format (the "reply" is what you speak aloud):
@@ -145,7 +150,10 @@ RULES:
   }
 }
 
-export async function askAthena(userMessage: string): Promise<AthenaResponse> {
+export async function askAthena(
+  userMessage: string,
+  shouldGreet = false,
+): Promise<AthenaResponse> {
   const settings = await getSettings();
 
   if (!settings.anthropicApiKey) {
@@ -170,7 +178,7 @@ export async function askAthena(userMessage: string): Promise<AthenaResponse> {
     const response = await client.messages.create({
       model: MODEL,
       max_tokens: 512,
-      system: buildSystemPrompt(settings.userName, context),
+      system: buildSystemPrompt(settings.userName, context, shouldGreet),
       messages,
     });
 

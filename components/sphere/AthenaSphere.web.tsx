@@ -1,223 +1,251 @@
-// Web-only: canvas-based dot sphere.
-// Metro auto-resolves .web.tsx over .tsx on the web platform.
 import React, { useEffect, useRef } from 'react';
 import { View } from 'react-native';
 import type { AthenaMode } from '@/types';
 
-interface Props {
-  mode: AthenaMode;
-  amplitude?: number;
-  size?: number;
+// ─── Dot geometry (pre-computed) ─────────────────────────────────────────────
+
+interface Dot { bx: number; by: number; bz: number } // base unit-sphere coords
+
+const DOTS: Dot[] = (() => {
+  const d: Dot[] = [];
+  for (let lat = -88; lat <= 88; lat += 5) {
+    const phi   = (lat * Math.PI) / 180;
+    const circ  = Math.cos(phi);
+    const count = Math.max(1, Math.round(60 * circ));
+    for (let i = 0; i < count; i++) {
+      const lon   = (i / count) * Math.PI * 2;
+      d.push({ bx: circ * Math.cos(lon), by: Math.sin(phi), bz: circ * Math.sin(lon) });
+    }
+  }
+  return d;
+})();
+
+// ─── Bubble state ─────────────────────────────────────────────────────────────
+
+interface Bubble {
+  cx: number; cy: number; cz: number; // center on unit sphere
+  radiusRad: number;                   // influence radius (radians)
+  intensity: number;                   // 0–1
+  birth: number;                       // ms (performance.now)
+  lifetime: number;                    // ms
 }
 
-export default function AthenaSphere({ mode, amplitude = 0, size = 280 }: Props) {
-  const containerRef = useRef<any>(null);
-  const modeRef = useRef(mode);
-  const amplitudeRef = useRef(amplitude);
+// ─── Chrome color helpers ─────────────────────────────────────────────────────
 
-  useEffect(() => { modeRef.current = mode; }, [mode]);
-  useEffect(() => { amplitudeRef.current = amplitude; }, [amplitude]);
+// Phong-like lighting: key from upper-left-front, soft fill from right
+const LIGHT_KEY  = { x: -0.55, y: 0.70, z: 0.45 };
+const LIGHT_FILL = { x:  0.70, y: 0.30, z: 0.20 };
+
+function dot3(a: { x: number; y: number; z: number }, bx: number, by: number, bz: number): number {
+  return a.x * bx + a.y * by + a.z * bz;
+}
+
+function chromeColor(nx: number, ny: number, nz: number, extraBright = 0): string {
+  const key  = Math.max(0, dot3(LIGHT_KEY,  nx, ny, nz));
+  const fill = Math.max(0, dot3(LIGHT_FILL, nx, ny, nz)) * 0.3;
+  const spec = Math.pow(Math.max(0, key), 8) * 0.5; // specular highlight
+  const v    = Math.min(1, 0.10 + key * 0.55 + fill + spec + extraBright);
+  // Map 0–1 to chrome palette: near-black → dark grey → silver → white
+  const r = Math.round(v * 220 + (1 - v) * 12);
+  const g = Math.round(v * 220 + (1 - v) * 12);
+  const b = Math.round(v * 235 + (1 - v) * 20);
+  return `rgb(${r},${g},${b})`;
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
+interface Props {
+  mode:      AthenaMode;
+  amplitude: number;   // 0–1, from ElevenLabs analyser
+  size?:     number;
+}
+
+export default function AthenaSphere({ mode, amplitude, size = 300 }: Props) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const stateRef  = useRef({
+    angle:   0,
+    bubbles: [] as Bubble[],
+    lastBubbleCheck: 0,
+    clusterCandidates: [] as { cx: number; cy: number; cz: number }[],
+  });
+  const rafRef = useRef<number>(0);
+  const modeRef      = useRef(mode);
+  const amplitudeRef = useRef(amplitude);
+  modeRef.current      = mode;
+  amplitudeRef.current = amplitude;
 
   useEffect(() => {
-    // Get the underlying DOM div from RN Web's View
-    const container = containerRef.current as HTMLDivElement | null;
-    if (!container) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    const canvas = document.createElement('canvas');
-    canvas.width = size * dpr;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width  = size * dpr;
     canvas.height = size * dpr;
-    canvas.style.width = `${size}px`;
+    canvas.style.width  = `${size}px`;
     canvas.style.height = `${size}px`;
-    canvas.style.display = 'block';
-    container.appendChild(canvas);
-
     const ctx = canvas.getContext('2d')!;
     ctx.scale(dpr, dpr);
 
-    // ── Generate sphere dot positions on unit sphere ────────────────────
-    const LAT = 38;   // latitude divisions
-    const LON = 58;   // longitude divisions
-    type Dot = { nx: number; ny: number; nz: number };
-    const dots: Dot[] = [];
-
-    for (let i = 1; i < LAT; i++) {
-      const phi = (i / LAT) * Math.PI; // 0→PI (top to bottom)
-      for (let j = 0; j < LON; j++) {
-        const theta = (j / LON) * 2 * Math.PI;
-        dots.push({
-          nx: Math.sin(phi) * Math.cos(theta),
-          ny: Math.cos(phi),
-          nz: Math.sin(phi) * Math.sin(theta),
-        });
-      }
-    }
-
-    const R = size * 0.38;
     const cx = size / 2;
     const cy = size / 2;
+    const R  = size * 0.42;
 
-    // Light direction — upper-left, angled toward viewer (matches reference image)
-    const rawL = { x: -0.65, y: -0.38, z: 0.55 };
-    const lLen = Math.sqrt(rawL.x ** 2 + rawL.y ** 2 + rawL.z ** 2);
-    const LX = rawL.x / lLen;
-    const LY = rawL.y / lLen;
-    const LZ = rawL.z / lLen;
+    function addBubble(amp: number) {
+      const st = stateRef.current;
+      const now = performance.now();
+      // Maybe cluster near an existing recent bubble
+      let bx: number, by: number, bz: number;
+      if (st.clusterCandidates.length > 0 && Math.random() < 0.45) {
+        const c = st.clusterCandidates[Math.floor(Math.random() * st.clusterCandidates.length)];
+        const spread = 0.35;
+        bx = c.cx + (Math.random() - 0.5) * spread;
+        by = c.cy + (Math.random() - 0.5) * spread;
+        bz = c.cz + (Math.random() - 0.5) * spread;
+      } else {
+        // Random point on sphere (hemisphere facing camera, z > 0)
+        const theta = Math.random() * Math.PI * 2;
+        const phi   = Math.acos(1 - Math.random() * 1.6); // bias toward front
+        bx = Math.sin(phi) * Math.cos(theta);
+        by = Math.sin(phi) * Math.sin(theta) * 0.7;
+        bz = Math.max(0.1, Math.cos(phi));
+      }
+      // Normalize
+      const len = Math.sqrt(bx * bx + by * by + bz * bz);
+      bx /= len; by /= len; bz /= len;
 
-    // ── Animation state ─────────────────────────────────────────────────
-    let rotY = 0;
-    let glowPhase = 0;
-    let ripplePhase = 0;
-    let animId = 0;
+      const bubble: Bubble = {
+        cx: bx, cy: by, cz: bz,
+        radiusRad: 0.25 + amp * 0.35 + Math.random() * 0.2,
+        intensity: 0.4 + amp * 0.6,
+        birth: now,
+        lifetime: 400 + Math.random() * 350,
+      };
+      st.bubbles.push(bubble);
 
-    function draw() {
+      // Track cluster candidates (keep last 5)
+      st.clusterCandidates.push({ cx: bx, cy: by, cz: bz });
+      if (st.clusterCandidates.length > 5) st.clusterCandidates.shift();
+    }
+
+    function draw(ts: number) {
+      const amp  = amplitudeRef.current;
       const mode = modeRef.current;
-      const amp = amplitudeRef.current;
+      const st   = stateRef.current;
 
-      // Rotation speed varies by mode
-      const rotSpeed =
-        mode === 'thinking' ? 0.022 :
-        mode === 'speaking' ? 0.013 :
-        mode === 'listening' ? 0.008 :
-        0.004;
-      rotY += rotSpeed;
-      glowPhase += 0.045;
-      ripplePhase += 0.055;
-
-      const cosR = Math.cos(rotY);
-      const sinR = Math.sin(rotY);
+      // Rotation speed
+      const rotSpeed = mode === 'speaking' ? 0.0012 : 0.0006;
+      st.angle += rotSpeed;
 
       ctx.clearRect(0, 0, size, size);
 
-      // ── Outer glow halo (listening / speaking) ──────────────────────
-      if (mode === 'listening' || mode === 'speaking') {
-        const pulseFactor = 0.7 + 0.3 * Math.sin(glowPhase) + (mode === 'speaking' ? amp * 0.25 : 0);
-        const grd = ctx.createRadialGradient(
-          cx - R * 0.28, cy - R * 0.18, 0,
-          cx, cy, R * 1.55,
-        );
-        grd.addColorStop(0, `rgba(210, 20, 0, ${0.20 * pulseFactor})`);
-        grd.addColorStop(0.55, `rgba(160, 5, 0, ${0.09 * pulseFactor})`);
-        grd.addColorStop(1, 'rgba(80, 0, 0, 0)');
-        ctx.fillStyle = grd;
-        ctx.beginPath();
-        ctx.arc(cx, cy, R * 1.55, 0, Math.PI * 2);
-        ctx.fill();
+      // ── Spawn new bubbles when speaking ───────────────────────────────────
+      if (mode === 'speaking' && amp > 0.015) {
+        if (ts - st.lastBubbleCheck > 50) { // throttle to every 50ms
+          st.lastBubbleCheck = ts;
+          const numNew = Math.floor(amp * 4) + (Math.random() < amp * 2 ? 1 : 0);
+          for (let i = 0; i < numNew; i++) addBubble(amp);
+        }
+      } else if (mode !== 'speaking') {
+        st.clusterCandidates = [];
       }
 
-      // ── Idle pulse glow ─────────────────────────────────────────────
-      if (mode === 'idle') {
-        const pulse = 0.5 + 0.5 * Math.sin(glowPhase * 0.4);
-        const grd = ctx.createRadialGradient(cx - R * 0.3, cy - R * 0.2, R * 0.1, cx, cy, R * 1.2);
-        grd.addColorStop(0, `rgba(180, 15, 0, ${0.10 * pulse})`);
-        grd.addColorStop(1, 'rgba(80, 0, 0, 0)');
-        ctx.fillStyle = grd;
-        ctx.beginPath();
-        ctx.arc(cx, cy, R * 1.2, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      // ── Expire old bubbles ────────────────────────────────────────────────
+      const now = performance.now();
+      st.bubbles = st.bubbles.filter(b => now - b.birth < b.lifetime);
 
-      // ── Ripple rings when listening ──────────────────────────────────
-      if (mode === 'listening') {
-        for (let i = 0; i < 3; i++) {
-          const t = ((ripplePhase + i * 2.09) % (Math.PI * 2)) / (Math.PI * 2);
-          const rr = R * (1.05 + t * 0.85);
-          const alpha = (1 - t) * 0.45;
-          ctx.beginPath();
-          ctx.arc(cx, cy, rr, 0, Math.PI * 2);
-          ctx.strokeStyle = `rgba(200, 25, 0, ${alpha})`;
-          ctx.lineWidth = 1.2;
-          ctx.stroke();
+      // ── Projection + sort ─────────────────────────────────────────────────
+      const cosA = Math.cos(st.angle), sinA = Math.sin(st.angle);
+
+      // Pre-compute bubble displacements per dot
+      const dotDisplace = new Float32Array(DOTS.length);
+      if (st.bubbles.length > 0) {
+        for (let di = 0; di < DOTS.length; di++) {
+          const { bx, by, bz } = DOTS[di];
+          // Rotate dot position
+          const rx = bx * cosA - bz * sinA;
+          const rz = bx * sinA + bz * cosA;
+          let disp = 0;
+          for (const b of st.bubbles) {
+            const dotBub = Math.max(-1, Math.min(1, rx * b.cx + by * b.cy + rz * b.cz));
+            const angDist = Math.acos(dotBub);
+            if (angDist < b.radiusRad) {
+              const falloff  = Math.exp(-4 * (angDist / b.radiusRad) ** 2);
+              const progress = (now - b.birth) / b.lifetime;
+              // Envelope: fast pop (0–0.25) then slow decay (0.25–1)
+              const env = progress < 0.25
+                ? progress / 0.25
+                : 1 - (progress - 0.25) / 0.75;
+              disp = Math.max(disp, falloff * env * b.intensity);
+            }
+          }
+          dotDisplace[di] = disp;
         }
       }
 
-      // ── Project all dots ─────────────────────────────────────────────
-      type Projected = { sx: number; sy: number; z: number; intensity: number };
-      const projected: Projected[] = new Array(dots.length);
-
-      for (let k = 0; k < dots.length; k++) {
-        const d = dots[k];
-        // Y-axis rotation
-        const x = d.nx * cosR + d.nz * sinR;
-        const y = d.ny;
-        const z = -d.nx * sinR + d.nz * cosR;
-
-        // Diffuse lighting
-        const intensity = Math.max(0, x * LX + y * LY + z * LZ);
-
-        // Perspective divide — slight depth effect
-        const fov = 3.0;
-        const dz = fov + z + 1;
-        projected[k] = {
-          sx: cx + (x * R * fov) / dz,
-          sy: cy - (y * R * fov) / dz,
-          z,
-          intensity,
+      // Collect projected dots
+      type ProjDot = { sx: number; sy: number; sz: number; nx: number; ny: number; nz: number; disp: number };
+      const projected: ProjDot[] = DOTS.map(({ bx, by, bz }, i) => {
+        const rx =  bx * cosA - bz * sinA;
+        const rz =  bx * sinA + bz * cosA;
+        const d  = dotDisplace[i];
+        const scale = 1 + d * 0.32; // pop outward
+        return {
+          sx: cx + rx * R * scale,
+          sy: cy - by * R * scale,
+          sz: rz * scale,
+          nx: rx, ny: by, nz: rz,
+          disp: d,
         };
-      }
+      });
 
-      // ── Painter's algorithm (back to front) ─────────────────────────
-      projected.sort((a, b) => a.z - b.z);
+      // Painter's algorithm (back to front)
+      projected.sort((a, b) => a.sz - b.sz);
 
-      // ── Draw dots ───────────────────────────────────────────────────
-      for (const d of projected) {
-        // Cull near-invisible back-facing dots for perf
-        if (d.intensity < 0.015 && d.z < -0.05) continue;
+      // ── Draw dots ─────────────────────────────────────────────────────────
+      const listenPulse = mode === 'listening'
+        ? 0.06 * Math.sin(ts * 0.004) + 0.06
+        : 0;
+      const thinkShimmer = mode === 'thinking'
+        ? 0.04 * Math.sin(ts * 0.007 + Math.random() * 0.1)
+        : 0;
 
-        const t = d.intensity;
+      for (const p of projected) {
+        if (p.sz < -0.05) continue; // cull back face
 
-        // Color: near-black (#140000) → deep red (#880000) → bright red-orange (#ff3300)
-        const rr = Math.round(20 + t * 235);   // 20 → 255
-        const gg = Math.round(0 + t * 51);     // 0 → 51  (warm orange tinge at peak)
-        const bb = 0;
-        const alpha = 0.12 + t * 0.88;
+        const isBack = p.sz < 0;
+        const extra  = p.disp * 0.8 + listenPulse + thinkShimmer;
+        const color  = isBack ? 'rgba(30,30,50,0.4)' : chromeColor(p.nx, p.ny, p.nz, extra);
+        const dotR   = isBack ? 0.9 : (1.2 + p.disp * 1.8);
+        const alpha  = isBack ? 0.25 : Math.min(1, 0.55 + p.sz * 0.45 + p.disp * 0.5);
 
-        // Dot radius: larger for bright / foreground dots
-        const dotR = 0.9 + t * 1.1 + (d.z + 1) * 0.18;
-
-        ctx.beginPath();
-        ctx.arc(d.sx, d.sy, dotR, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${rr},${gg},${bb},${alpha})`;
-        ctx.fill();
-      }
-
-      // ── Thinking arc ────────────────────────────────────────────────
-      if (mode === 'thinking') {
-        const spin = rotY * 3.5;
         ctx.save();
-        ctx.translate(cx, cy);
-        ctx.rotate(spin);
+        ctx.globalAlpha = alpha;
         ctx.beginPath();
-        ctx.arc(0, 0, R * 1.32, -0.4, 1.1);
-        ctx.strokeStyle = 'rgba(220, 45, 0, 0.75)';
-        ctx.lineWidth = 2.5;
-        ctx.lineCap = 'round';
-        ctx.stroke();
-        // Second shorter arc offset
-        ctx.rotate(Math.PI);
-        ctx.beginPath();
-        ctx.arc(0, 0, R * 1.32, -0.2, 0.6);
-        ctx.strokeStyle = 'rgba(180, 20, 0, 0.4)';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
+        ctx.arc(p.sx, p.sy, dotR, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
         ctx.restore();
       }
 
-      animId = requestAnimationFrame(draw);
+      // ── Soft glow ring ────────────────────────────────────────────────────
+      const glowAlpha = mode === 'speaking' ? 0.07 + amp * 0.10 : 0.04;
+      const grad = ctx.createRadialGradient(cx, cy, R * 0.7, cx, cy, R * 1.1);
+      grad.addColorStop(0, `rgba(180,180,210,0)`);
+      grad.addColorStop(1, `rgba(180,180,210,${glowAlpha})`);
+      ctx.beginPath();
+      ctx.arc(cx, cy, R * 1.1, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      rafRef.current = requestAnimationFrame(draw);
     }
 
-    animId = requestAnimationFrame(draw);
-
-    return () => {
-      cancelAnimationFrame(animId);
-      if (container.contains(canvas)) container.removeChild(canvas);
-    };
+    rafRef.current = requestAnimationFrame(draw);
+    return () => { cancelAnimationFrame(rafRef.current); };
   }, [size]);
 
   return (
-    <View
-      ref={containerRef}
-      style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}
-    />
+    <View style={{ width: size, height: size }}>
+      <canvas ref={canvasRef} style={{ display: 'block' }} />
+    </View>
   );
 }

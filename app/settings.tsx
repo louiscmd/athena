@@ -133,7 +133,7 @@ export default function SettingsScreen() {
               autoCorrect={false}
             />
           </Field>
-          <Field label="OpenAI API Key (for voice input)">
+          <Field label="OpenAI API Key (for Whisper STT)">
             <TextInput
               style={styles.input}
               value={form.openAiApiKey}
@@ -145,6 +145,36 @@ export default function SettingsScreen() {
               autoCorrect={false}
             />
           </Field>
+        </Section>
+
+        {/* ElevenLabs Voice */}
+        <Section title="Voice — ElevenLabs">
+          <Field label="ElevenLabs API Key">
+            <TextInput
+              style={styles.input}
+              value={form.elevenLabsApiKey ?? ''}
+              onChangeText={v => update('elevenLabsApiKey', v)}
+              placeholder="sk_..."
+              placeholderTextColor={Colors.textMuted}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </Field>
+          <Field label="Voice ID">
+            <TextInput
+              style={styles.input}
+              value={form.elevenLabsVoiceId ?? ''}
+              onChangeText={v => update('elevenLabsVoiceId', v)}
+              placeholder="e.g. 21m00Tcm4TlvDq8ikWAM"
+              placeholderTextColor={Colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </Field>
+          <Text style={styles.fieldHint}>
+            Get your API key at elevenlabs.io. Copy a Voice ID from the Voices library. Falls back to browser TTS if not set.
+          </Text>
         </Section>
 
         {/* Voice */}

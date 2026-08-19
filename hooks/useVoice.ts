@@ -1,201 +1,259 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 import { useAthena } from '@/contexts/AthenaContext';
 import { askAthena } from '@/lib/ai';
-import {
-  startRecording, stopRecording, transcribeAudio,
-  speak, stopSpeaking, getRecordingAmplitude,
-} from '@/lib/voice';
-import {
-  createTask, createEvent, createHabit, createGoal,
-  createFinanceEntry, createNote,
-  scheduleTaskNotification,
-} from '@/lib/database';
-import { scheduleTaskNotification as scheduleNotif } from '@/lib/notifications';
+import { saveMessage, createTask, createEvent, createHabit, createGoal, createFinanceEntry, createNote } from '@/lib/database';
+import { router } from 'expo-router';
 import type { AthenaAction } from '@/types';
+
+// ─── Platform-specific voice imports ─────────────────────────────────────────
+
+let initWakeWord: any, pauseWakeWord: any, resumeWakeWord: any, stopWakeWord: any;
+let elevenLabsSpeak: any, stopElevenLabs: any;
+let speakFallback: any, stopSpeakingFallback: any;
+
+if (Platform.OS === 'web') {
+  // Dynamic imports at module level via require (Metro resolves .web.ts)
+  const voiceMod = require('@/lib/voice');
+  initWakeWord       = voiceMod.initWakeWord;
+  pauseWakeWord      = voiceMod.pauseWakeWord;
+  resumeWakeWord     = voiceMod.resumeWakeWord;
+  stopWakeWord       = voiceMod.stopWakeWord;
+  speakFallback      = voiceMod.speakFallback;
+  stopSpeakingFallback = voiceMod.stopSpeakingFallback;
+
+  const elMod = require('@/lib/elevenlabs');
+  elevenLabsSpeak    = elMod.elevenLabsSpeak;
+  stopElevenLabs     = elMod.stopElevenLabs;
+}
+
+// ─── Greeting logic ───────────────────────────────────────────────────────────
+
+const GREET_INTERVAL = 60 * 60 * 1000; // 1 hour
+
+function checkGreeting(): boolean {
+  try {
+    const last = parseInt(sessionStorage.getItem('athena_greeted') ?? '0', 10);
+    if (Date.now() - last > GREET_INTERVAL) {
+      sessionStorage.setItem('athena_greeted', String(Date.now()));
+      return true;
+    }
+    return false;
+  } catch { return false; }
+}
+
+// ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useVoiceInteraction() {
   const { mode, setMode, settings, addMessage, setAmplitude } = useAthena();
-  const amplitudeInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [transcript, setTranscript] = useState('');
+  const processingRef = useRef(false);
 
-  // ─── Amplitude polling (for sphere animation) ─────────────────────────────
+  // ── Process a command ─────────────────────────────────────────────────────
 
-  function startAmplitudePolling() {
-    amplitudeInterval.current = setInterval(async () => {
-      const amp = await getRecordingAmplitude();
-      setAmplitude(amp);
-    }, 80);
-  }
+  const processCommand = useCallback(async (text: string) => {
+    if (processingRef.current) return;
+    processingRef.current = true;
 
-  function stopAmplitudePolling() {
-    if (amplitudeInterval.current) {
-      clearInterval(amplitudeInterval.current);
-      amplitudeInterval.current = null;
+    setTranscript('');
+    setMode('thinking');
+
+    try {
+      await saveMessage({ role: 'user', content: text, timestamp: Date.now() });
+      const greet    = checkGreeting();
+      const response = await askAthena(text, greet);
+
+      await saveMessage({ role: 'athena', content: response.reply, timestamp: Date.now() });
+      if (response.actions) await executeActions(response.actions);
+
+      // Speak the reply
+      setMode('speaking');
+      await speakReply(response.reply);
+    } catch (err) {
+      console.error('Athena error:', err);
+    } finally {
+      processingRef.current = false;
+      setMode('idle');
+      // Open a follow-up window so the next thing the user says is captured without re-saying "Athena"
+      if (Platform.OS === 'web') resumeWakeWord?.(true);
     }
-    setAmplitude(0);
-  }
+  }, [settings, setMode, setAmplitude]);
 
-  // ─── Execute actions returned by Athena ───────────────────────────────────
+  // ── TTS ───────────────────────────────────────────────────────────────────
+
+  const speakReply = useCallback(async (text: string) => {
+    const hasElevenLabs = settings.elevenLabsApiKey?.trim() && settings.elevenLabsVoiceId?.trim();
+
+    if (Platform.OS === 'web' && hasElevenLabs) {
+      try {
+        await elevenLabsSpeak(
+          text,
+          settings.elevenLabsApiKey!.trim(),
+          settings.elevenLabsVoiceId!.trim(),
+          (amp: number) => setAmplitude(amp),
+          () => {},
+        );
+        return;
+      } catch (e) {
+        console.warn('ElevenLabs failed, falling back to browser TTS:', e);
+      }
+    }
+
+    // Fallback: browser Web Speech API
+    if (Platform.OS === 'web') {
+      await speakFallback?.(text, settings.voice);
+    }
+  }, [settings, setAmplitude]);
+
+  // ── Stop speaking ─────────────────────────────────────────────────────────
+
+  const stopSpeaking = useCallback(() => {
+    if (Platform.OS === 'web') {
+      stopElevenLabs?.();
+      stopSpeakingFallback?.();
+    }
+    setMode('idle');
+    setAmplitude(0);
+  }, [setMode, setAmplitude]);
+
+  // ── Wake word initialization ───────────────────────────────────────────────
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+
+    // Request mic permission silently
+    navigator.mediaDevices?.getUserMedia({ audio: true })
+      .then(s => s.getTracks().forEach(t => t.stop()))
+      .catch(() => {});
+
+    const started = initWakeWord?.({
+      onWake: () => {
+        if (processingRef.current) return;
+        setMode('listening');
+        setTranscript('');
+      },
+      onCommand: (text: string) => {
+        if (processingRef.current) return;
+        processCommand(text);
+      },
+      onTranscript: (text: string) => {
+        setTranscript(text);
+      },
+    });
+
+    if (!started) {
+      console.warn('SpeechRecognition not available — use Chrome for wake word support');
+    }
+
+    return () => { stopWakeWord?.(); };
+  }, []); // only init once
+
+  // ── Pause recognition while speaking ──────────────────────────────────────
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    if (mode === 'speaking') {
+      pauseWakeWord?.();
+    }
+    // resume is called in processCommand's finally block
+  }, [mode]);
+
+  // ── Execute AI actions ─────────────────────────────────────────────────────
 
   async function executeActions(actions: AthenaAction[]) {
     for (const action of actions) {
       try {
         switch (action.type) {
-          case 'create_task': {
-            const data = action.data as Parameters<typeof createTask>[0];
-            const task = await createTask({
-              title: data.title as string,
-              priority: (data.priority as 'low' | 'medium' | 'high') ?? 'medium',
-              category: (data.category as 'personal' | 'work' | 'health' | 'finance' | 'other') ?? 'personal',
-              completed: false,
-              ...(data.dueDate ? { dueDate: data.dueDate as number } : {}),
-              ...(data.dueTime ? { dueTime: data.dueTime as string } : {}),
-              ...(data.description ? { description: data.description as string } : {}),
+          case 'create_task':
+            await createTask({
+              title:       action.data.title as string,
+              priority:    (action.data.priority as any) ?? 'medium',
+              category:    (action.data.category as any) ?? 'personal',
+              completed:   false,
+              ...(action.data.dueDate      ? { dueDate:      action.data.dueDate as number } : {}),
+              ...(action.data.dueTime      ? { dueTime:      action.data.dueTime as string } : {}),
+              ...(action.data.description  ? { description:  action.data.description as string } : {}),
             });
-            if (task.dueDate && settings.notifications.taskReminders) {
-              const notifId = await scheduleNotif(task.id, task.title, task.dueDate, task.dueTime);
-              if (notifId) {
-                await createTask({ ...task, notificationId: notifId });
-              }
-            }
             break;
-          }
-          case 'create_event': {
+          case 'create_event':
             await createEvent({
-              title: action.data.title as string,
+              title:     action.data.title as string,
               startTime: action.data.startTime as number,
-              endTime: action.data.endTime as number,
+              endTime:   action.data.endTime as number,
               ...(action.data.description ? { description: action.data.description as string } : {}),
-              ...(action.data.location ? { location: action.data.location as string } : {}),
-              ...(action.data.color ? { color: action.data.color as string } : {}),
+              ...(action.data.location    ? { location:    action.data.location as string } : {}),
+              ...(action.data.color       ? { color:       action.data.color as string } : {}),
             });
             break;
-          }
-          case 'create_habit': {
+          case 'create_habit':
             await createHabit({
-              name: action.data.name as string,
-              frequency: (action.data.frequency as 'daily' | 'weekly' | 'weekdays' | 'weekends') ?? 'daily',
-              icon: (action.data.icon as string) ?? '✅',
-              color: (action.data.color as string) ?? '#00d4ff',
+              name:      action.data.name as string,
+              frequency: (action.data.frequency as any) ?? 'daily',
+              icon:      (action.data.icon as string) ?? '✅',
+              color:     (action.data.color as string) ?? '#b8b8cc',
               ...(action.data.description ? { description: action.data.description as string } : {}),
             });
             break;
-          }
-          case 'create_goal': {
+          case 'create_goal':
             await createGoal({
-              title: action.data.title as string,
-              timeframe: (action.data.timeframe as 'week' | 'month' | 'quarter' | 'year' | 'custom') ?? 'month',
-              icon: (action.data.icon as string) ?? '🎯',
+              title:     action.data.title as string,
+              timeframe: (action.data.timeframe as any) ?? 'month',
+              icon:      (action.data.icon as string) ?? '🎯',
               ...(action.data.description ? { description: action.data.description as string } : {}),
-              ...(action.data.targetDate ? { targetDate: action.data.targetDate as number } : {}),
+              ...(action.data.targetDate  ? { targetDate:  action.data.targetDate as number } : {}),
             });
             break;
-          }
-          case 'add_finance': {
+          case 'add_finance':
             await createFinanceEntry({
-              type: action.data.type as 'income' | 'expense',
-              amount: action.data.amount as number,
-              currency: (action.data.currency as string) ?? settings.currency,
-              category: (action.data.category as 'food' | 'transport' | 'housing' | 'entertainment' | 'health' | 'shopping' | 'work' | 'savings' | 'other') ?? 'other',
+              type:        (action.data.type as any) ?? 'expense',
+              amount:      action.data.amount as number,
+              currency:    (action.data.currency as string) ?? settings.currency ?? 'USD',
+              category:    (action.data.category as any) ?? 'other',
               description: action.data.description as string,
-              date: (action.data.date as number) ?? Date.now(),
+              date:        (action.data.date as number) ?? Date.now(),
             });
             break;
-          }
-          case 'create_note': {
+          case 'create_note':
             await createNote({
-              title: action.data.title as string,
-              content: action.data.content as string,
-              tags: (action.data.tags as string[]) ?? [],
-              pinned: (action.data.pinned as boolean) ?? false,
+              title:   action.data.title as string,
+              content: (action.data.content as string) ?? '',
+              tags:    (action.data.tags as string[]) ?? [],
+              pinned:  (action.data.pinned as boolean) ?? false,
             });
+            break;
+          case 'open_screen': {
+            const screen = action.data.screen as string;
+            const map: Record<string, string> = {
+              schedule: '/(tabs)/schedule',
+              tasks:    '/(tabs)/tasks',
+              habits:   '/(tabs)/habits',
+              finance:  '/(tabs)/finance',
+              goals:    '/(tabs)/goals',
+              notes:    '/(tabs)/notes',
+              gmail:    '/(tabs)/gmail',
+              music:    '/(tabs)/youtube',
+            };
+            if (map[screen]) router.push(map[screen] as any);
             break;
           }
         }
-      } catch (err) {
-        console.error(`Failed to execute action ${action.type}:`, err);
+      } catch (e) {
+        console.error('Action failed:', action.type, e);
       }
     }
   }
 
-  // ─── Process a text message ────────────────────────────────────────────────
+  // ── Exposed API ───────────────────────────────────────────────────────────
 
-  const processMessage = useCallback(async (text: string) => {
-    if (!text.trim()) return;
-
-    await addMessage({ role: 'user', content: text, timestamp: Date.now() });
-    setMode('thinking');
-
-    const response = await askAthena(text);
-
-    if (response.actions?.length) {
-      await executeActions(response.actions);
-    }
-
-    await addMessage({ role: 'athena', content: response.reply, timestamp: Date.now() });
-
-    setMode('speaking');
-    await speak(response.reply, settings.voice,
-      () => setMode('speaking'),
-      () => setMode('idle'),
-    );
-  }, [settings, addMessage, setMode]);
-
-  // ─── Voice interaction ─────────────────────────────────────────────────────
-
-  const startListening = useCallback(async () => {
-    if (mode !== 'idle') {
-      if (mode === 'speaking') await stopSpeaking();
-      else return;
-    }
-
-    const started = await startRecording();
-    if (!started) return;
-
-    setMode('listening');
-    startAmplitudePolling();
-  }, [mode, setMode]);
-
-  const stopListening = useCallback(async () => {
-    if (mode !== 'listening') return;
-
-    stopAmplitudePolling();
-    setMode('thinking');
-
-    const uri = await stopRecording();
-    if (!uri) {
-      setMode('idle');
-      return;
-    }
-
-    let text: string | null = null;
-    if (settings.openAiApiKey) {
-      text = await transcribeAudio(uri, settings.openAiApiKey);
-    }
-
-    if (!text) {
-      // No transcription available — show input prompt
-      setMode('idle');
-      return;
-    }
-
-    await processMessage(text);
-  }, [mode, settings, setMode, processMessage]);
-
-  const cancelListening = useCallback(async () => {
-    stopAmplitudePolling();
-    await stopRecording();
-    setMode('idle');
-  }, [setMode]);
+  // Legacy button-based methods (still used by text input)
+  const startListening = useCallback(() => { setMode('listening'); }, [setMode]);
+  const stopListening  = useCallback(() => {}, []);
 
   return {
-    mode,
     startListening,
     stopListening,
-    cancelListening,
-    processMessage,
-    stopSpeaking: async () => {
-      await stopSpeaking();
-      setMode('idle');
-    },
+    processMessage: processCommand,
+    stopSpeaking,
+    transcript,
   };
 }
