@@ -14,7 +14,7 @@ import { getUser } from '@/lib/auth';
 
 export default function HomeScreen() {
   const { mode, settings, initialized, amplitude } = useAthena();
-  const { processMessage, stopSpeaking, transcript } = useVoiceInteraction();
+  const { processMessage, stopSpeaking, transcript, lastReply } = useVoiceInteraction();
   const [textInput, setTextInput]   = useState('');
   const [showText, setShowText]     = useState(false);
 
@@ -95,7 +95,19 @@ export default function HomeScreen() {
             </Animated.Text>
           ) : null}
 
-          {wakeHint && !transcript ? (
+          {/* Athena's last reply — always shown as text in case audio is blocked */}
+          {lastReply && (mode === 'speaking' || mode === 'idle') ? (
+            <Animated.Text
+              key={lastReply}
+              entering={FadeIn.duration(300)}
+              style={styles.replyText}
+              numberOfLines={4}
+            >
+              {lastReply}
+            </Animated.Text>
+          ) : null}
+
+          {wakeHint && !transcript && !lastReply ? (
             <Text style={styles.hint}>Say "Athena" to activate — tap sphere to stop</Text>
           ) : null}
         </View>
@@ -204,6 +216,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: Spacing.xl,
     lineHeight: 20,
+  },
+  replyText: {
+    color: Colors.text,
+    fontSize: 15,
+    textAlign: 'center',
+    paddingHorizontal: Spacing.xl,
+    lineHeight: 22,
+    fontStyle: 'italic',
   },
   hint: {
     color: Colors.textMuted,
