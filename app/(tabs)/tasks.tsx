@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import Animated, { FadeIn, FadeOut, Layout } from 'react-native-reanimated';
 import { getTasks, updateTask, deleteTask } from '@/lib/database';
 import Card from '@/components/ui/Card';
@@ -25,6 +25,7 @@ export default function TasksScreen() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const active = tasks.filter(t => !t.completed);
   const completed = tasks.filter(t => t.completed);

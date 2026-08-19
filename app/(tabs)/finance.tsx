@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { getFinanceEntries, deleteFinanceEntry } from '@/lib/database';
 import { useAthena } from '@/contexts/AthenaContext';
@@ -23,6 +23,7 @@ export default function FinanceScreen() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const filtered = filter === 'all' ? entries : entries.filter(e => e.type === filter);
 

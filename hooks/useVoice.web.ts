@@ -69,8 +69,9 @@ export function useVoiceInteraction() {
   settingsRef.current = settings;
   modeRef.current     = mode;
 
-  const [transcript, setTranscript] = useState('');
-  const [lastReply, setLastReply]   = useState(''); // shown on screen when audio fails
+  const [transcript, setTranscript]         = useState('');
+  const [lastReply, setLastReply]           = useState('');
+  const [actionFeedback, setActionFeedback] = useState(''); // shows "✓ Task created" etc.
 
   type Phase = 'dormant' | 'listening' | 'processing';
   const phaseRef      = useRef<Phase>('dormant');
@@ -233,7 +234,16 @@ export function useVoiceInteraction() {
       await saveMessage({ role: 'athena', content: response.reply, timestamp: Date.now() });
       console.log('[Athena] Got reply:', response.reply.slice(0, 80));
 
-      if (response.actions?.length) await executeActions(response.actions, s);
+      if (response.actions?.length) {
+        console.log('[Athena] Executing actions:', response.actions.length, JSON.stringify(response.actions));
+        const feedback = await executeActions(response.actions, s);
+        if (feedback) {
+          setActionFeedback(feedback);
+          setTimeout(() => setActionFeedback(''), 5000);
+        }
+      } else {
+        console.log('[Athena] No actions in response (conversational reply only)');
+      }
 
       setLastReply(response.reply); // always show text
       setMode('speaking');
@@ -342,9 +352,14 @@ export function useVoiceInteraction() {
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
-  async function executeActions(actions: AthenaAction[], s: AthenaSettings) {
+  // Returns a short feedback string shown on screen, e.g. "✓ Task created"
+  async function executeActions(actions: AthenaAction[], s: AthenaSettings): Promise<string> {
+    const labels: string[] = [];
+    let navigateTo: string | null = null;
+
     for (const action of actions) {
       try {
+        console.log('[Athena] Executing action:', action.type, JSON.stringify(action.data));
         switch (action.type) {
           case 'create_task':
             await createTask({
@@ -356,6 +371,8 @@ export function useVoiceInteraction() {
               ...(action.data.dueTime     ? { dueTime:     action.data.dueTime as string }     : {}),
               ...(action.data.description ? { description: action.data.description as string } : {}),
             });
+            labels.push(`✓ Task created: "${action.data.title}"`);
+            if (!navigateTo) navigateTo = '/(tabs)/tasks';
             break;
           case 'create_event':
             await createEvent({
@@ -366,6 +383,8 @@ export function useVoiceInteraction() {
               ...(action.data.location    ? { location:    action.data.location as string }    : {}),
               ...(action.data.color       ? { color:       action.data.color as string }       : {}),
             });
+            labels.push(`✓ Event added: "${action.data.title}"`);
+            if (!navigateTo) navigateTo = '/(tabs)/schedule';
             break;
           case 'create_habit':
             await createHabit({
@@ -375,6 +394,8 @@ export function useVoiceInteraction() {
               color: (action.data.color as string) ?? '#b8b8cc',
               ...(action.data.description ? { description: action.data.description as string } : {}),
             });
+            labels.push(`✓ Habit created: "${action.data.name}"`);
+            if (!navigateTo) navigateTo = '/(tabs)/habits';
             break;
           case 'create_goal':
             await createGoal({
@@ -384,6 +405,8 @@ export function useVoiceInteraction() {
               ...(action.data.description ? { description: action.data.description as string } : {}),
               ...(action.data.targetDate  ? { targetDate:  action.data.targetDate as number }  : {}),
             });
+            labels.push(`✓ Goal set: "${action.data.title}"`);
+            if (!navigateTo) navigateTo = '/(tabs)/goals';
             break;
           case 'add_finance':
             await createFinanceEntry({
@@ -394,6 +417,8 @@ export function useVoiceInteraction() {
               description: action.data.description as string,
               date: (action.data.date as number) ?? Date.now(),
             });
+            labels.push(`✓ Finance logged: ${action.data.amount} ${action.data.currency ?? s.currency}`);
+            if (!navigateTo) navigateTo = '/(tabs)/finance';
             break;
           case 'create_note':
             await createNote({
@@ -402,6 +427,8 @@ export function useVoiceInteraction() {
               tags: (action.data.tags as string[]) ?? [],
               pinned: (action.data.pinned as boolean) ?? false,
             });
+            labels.push(`✓ Note saved: "${action.data.title}"`);
+            if (!navigateTo) navigateTo = '/(tabs)/notes';
             break;
           case 'schedule_post':
             if (_schedulePostByService) {
@@ -411,6 +438,7 @@ export function useVoiceInteraction() {
                 action.data.scheduledAt as string | undefined,
               );
             }
+            labels.push(`✓ Post queued on ${action.data.platform}`);
             break;
           case 'open_screen': {
             const map: Record<string, string> = {
@@ -420,12 +448,23 @@ export function useVoiceInteraction() {
               gmail: '/(tabs)/gmail',       music: '/(tabs)/youtube',
             };
             const path = map[action.data.screen as string];
-            if (path) router.push(path as any);
+            if (path) { router.push(path as any); navigateTo = null; } // explicit nav, skip auto-nav
             break;
           }
         }
-      } catch (e) { console.error('[Athena] Action failed:', action.type, e); }
+        console.log('[Athena] Action OK:', action.type);
+      } catch (e) {
+        console.error('[Athena] Action failed:', action.type, e);
+        labels.push(`⚠ ${action.type} failed: ${(e as Error).message}`);
+      }
     }
+
+    // Auto-navigate to show the user the result (after TTS finishes, handled by caller)
+    if (navigateTo) {
+      setTimeout(() => router.push(navigateTo as any), 1200);
+    }
+
+    return labels.join(' · ');
   }
 
   // ── Mount / unmount ───────────────────────────────────────────────────────
@@ -477,5 +516,5 @@ export function useVoiceInteraction() {
   const startListening = useCallback(() => setMode('listening'), [setMode]);
   const stopListening  = useCallback(() => {}, []);
 
-  return { startListening, stopListening, processMessage, stopSpeaking, transcript, lastReply };
+  return { startListening, stopListening, processMessage, stopSpeaking, transcript, lastReply, actionFeedback };
 }

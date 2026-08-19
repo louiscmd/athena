@@ -255,5 +255,7 @@ export function useVoiceInteraction() {
     processMessage: processCommand,
     stopSpeaking,
     transcript,
+    lastReply: '',
+    actionFeedback: '',
   };
 }

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { getGoals, updateGoal } from '@/lib/database';
 import Card from '@/components/ui/Card';
@@ -15,6 +15,7 @@ export default function GoalsScreen() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const active = goals.filter(g => g.status === 'active');
   const completed = goals.filter(g => g.status === 'completed');

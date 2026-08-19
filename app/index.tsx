@@ -14,7 +14,7 @@ import { getUser } from '@/lib/auth';
 
 export default function HomeScreen() {
   const { mode, settings, initialized, amplitude } = useAthena();
-  const { processMessage, stopSpeaking, transcript, lastReply } = useVoiceInteraction();
+  const { processMessage, stopSpeaking, transcript, lastReply, actionFeedback } = useVoiceInteraction();
   const [textInput, setTextInput]   = useState('');
   const [showText, setShowText]     = useState(false);
 
@@ -104,6 +104,17 @@ export default function HomeScreen() {
               numberOfLines={4}
             >
               {lastReply}
+            </Animated.Text>
+          ) : null}
+
+          {/* Action confirmation — "✓ Task created: ..." */}
+          {actionFeedback ? (
+            <Animated.Text
+              key={actionFeedback}
+              entering={FadeIn.duration(200)}
+              style={styles.actionFeedback}
+            >
+              {actionFeedback}
             </Animated.Text>
           ) : null}
 
@@ -230,6 +241,13 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 0.5,
     textAlign: 'center',
+  },
+  actionFeedback: {
+    color: '#4ade80',   // green confirmation
+    fontSize: 12,
+    letterSpacing: 0.3,
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
 
   bottomArea: { gap: 0, paddingBottom: Spacing.sm },

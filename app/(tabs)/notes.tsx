@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
   TextInput, Alert, Modal, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { getNotes, updateNote, deleteNote, createNote } from '@/lib/database';
 import Card from '@/components/ui/Card';
@@ -23,6 +23,7 @@ export default function NotesScreen() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const filtered = search
     ? notes.filter(n =>

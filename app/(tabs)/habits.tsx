@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { getHabits, updateHabit, deleteHabit } from '@/lib/database';
 import Card from '@/components/ui/Card';
@@ -16,6 +16,7 @@ export default function HabitsScreen() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   async function toggleToday(habit: Habit) {
     const done = habit.completedDates.includes(today);

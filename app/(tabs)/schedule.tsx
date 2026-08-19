@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
   Alert, Modal, TextInput,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { getTasks, getEvents, updateTask, deleteTask } from '@/lib/database';
 import { getGoogleCalendarEvents, isGoogleCalendarConnected } from '@/lib/google-calendar';
@@ -49,6 +49,7 @@ export default function ScheduleScreen() {
   }, [selectedDate]);
 
   useEffect(() => { load(); }, [load]);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   async function toggleTask(task: Task) {
     await updateTask(task.id, { completed: !task.completed });
